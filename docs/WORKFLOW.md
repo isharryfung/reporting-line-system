@@ -185,6 +185,52 @@ python -m pytest tests/ --cov=src --cov-report=term-missing
 
 ---
 
+## Manual Test Frontend
+
+The repository includes a browser-based manual test console for the 8 routing
+test cases. It is useful for validating the workflow without reading pytest
+output.
+
+```bash
+# Install dependencies first if needed
+pip install -e ".[dev]"
+
+# Start the manual test server
+python -m src.manual_test_app
+```
+
+Open <http://127.0.0.1:8000>.
+
+For each test case, the page shows:
+
+| Field | Meaning |
+|-------|---------|
+| Input | Requester and action under test |
+| Setup | Data mutation applied before routing |
+| Expected output | Expected approver chain or error |
+| Pass criteria | Manual acceptance condition |
+| Actual output | JSON returned by the routing service |
+
+The manual console provides:
+
+* **Run this case** — executes one scenario against a fresh in-memory database.
+* **Run all test cases** — executes all 8 scenarios and updates pass/fail
+  badges on each card.
+
+The frontend calls these local endpoints:
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/test-cases` | Returns test case metadata |
+| `GET /api/test-cases/{id}/run` | Runs a single case, e.g. `TC-1` |
+| `GET /api/run-all` | Runs all manual test cases |
+
+Each run creates a fresh SQLite in-memory database, seeds the sample
+university data, applies the test case setup, then executes the same
+`build_approval_chain` logic used by the automated tests.
+
+---
+
 ## Extensibility Notes
 
 The following features are **not** included in this POC but have been
