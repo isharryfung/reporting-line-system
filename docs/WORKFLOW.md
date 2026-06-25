@@ -1,245 +1,148 @@
-# University Reporting-Line System — POC
+# University Reporting-Line System POC
 
 ## Overview
 
-This proof-of-concept implements an action-based approval routing system for a
-university that shares a single reporting-line platform across multiple
-departments.  Each department owns its own reporting-line structure.  The
-system routes approval requests (e.g. Annual Leave, Sick Leave) through the
-correct chain of approvers based on configurable routing rules and, where
-needed, fallback approvers.
+This proof-of-concept models a university reporting-line system that is used for
+both:
 
----
+1. **approval routing**, and
+2. **org chart display**.
+
+The POC is department-based and org-unit aware:
+
+- departments own their own levels, org-units, routing rules, and fallback
+  approvers
+- staff members have exactly one active primary manager
+- team lead is an **assignment/role** inside an org-unit, not a position
+- second-level approval is usually the primary manager's primary manager
+- top-level users route to a department-level fallback approver
+
+Acting/delegation is intentionally not implemented and is documented as a
+future enhancement.
 
 ## Architecture
 
-```
+```text
 src/
-├── models.py            ORM models (SQLAlchemy, SQLite by default)
-├── database.py          Engine / session factory helpers
+├── database.py
+├── manual_test_app.py
+├── models.py
+├── sample_data.py
 └── services/
-    ├── routing.py       Core routing logic → builds ApprovalChain
-    └── approval.py      Workflow layer → persists requests and records decisions
+    ├── approval.py
+    ├── org_chart.py
+    ├── permissions.py
+    └── routing.py
+
+frontend/
+├── app.js
+├── index.html
+└── styles.css
 
 tests/
-├── conftest.py          Shared fixtures and seed data
-└── test_routing.py      All 8 test cases + integration tests
-
-docs/
-└── WORKFLOW.md          This file
+├── conftest.py
+├── test_manual_test_app.py
+└── test_routing.py
 ```
 
----
+## Schema summary
 
-## Database Schema
+The schema includes:
 
-| Table                 | Purpose                                                   |
-|-----------------------|-----------------------------------------------------------|
-| `departments`         | Academic / admin departments (e.g. Computer Science, HR)  |
-| `dept_levels`         | Hierarchy levels within a dept; rank 1 = top (protected)  |
-| `users`               | Staff members, each assigned to a dept + level            |
-| `reporting_lines`     | Direct manager relationships (user → manager)             |
-| `actions`             | Workflow action types (Annual Leave, Sick Leave, …)       |
-| `action_routing_rules`| Per-action, per-dept approval level configuration         |
-| `action_fallback_rules`| Approver used when the requester is the top-level user   |
-| `approval_requests`   | A submitted request                                       |
-| `approval_steps`      | Individual approver nodes in an approval chain            |
-| `approval_actions`    | Each approver's recorded decision                         |
-| `audit_logs`          | Append-only audit trail                                   |
+- `departments`
+- `dept_levels`
+- `org_units`
+- `org_unit_memberships`
+- `users`
+- `reporting_lines`
+- `actions`
+- `action_routing_rules`
+- `department_fallback_rules`
+- `approval_requests`
+- `approval_steps`
+- `approval_actions`
+- `audit_logs`
 
-### Key design decisions
+## Seed data
 
-* **`dept_levels.is_top_level = True`** marks the protected highest level.
-  Department administrators may not edit or remove users at this level.
-* **`reporting_lines.is_active`** allows historical line data to be retained
-  without affecting live routing.
-* **`action_routing_rules`** is a separate table so routing behaviour can be
-  configured per-department without changing code.
-* **`action_fallback_rules`** enables a configured HR / Dean / Central Admin
-  user to receive requests from top-level users who have no higher manager.
+The sample data includes at least the following departments:
 
----
+- **Finance**
+- **Human Resources**
 
-## Workflow
+Example Finance scenario:
 
-### Normal staff (non-top-level)
+- Fiona — Finance Director (top level)
+- Mary — Senior Manager and Finance Team lead
+- Nina — Senior Manager
+- Peter — Finance Officer
+- Quinn — Payroll Team Finance Officer
 
-```
-Submit request
-    │
-    ▼
-Load action routing rule for (action, dept)
-    │
-    ▼
-Detect circular reporting ──── cycle detected ──► RoutingError
-    │
-    ▼
-requester.dept_level.is_top_level == False
-    │
-    ▼
-Get primary manager (active reporting_line)
-    │  no active line ──────────────────────────► RoutingError
-    ▼
-rule.requires_second_level?
-    │ Yes                 │ No
-    ▼                     ▼
-Get manager's manager   Return [primary]
-    │ found
-    ▼
-Return [primary, second-level]
-```
+Example HR scenario:
 
-### Top-level user (department head)
+- Henry — HR Director (top level)
+- Helen — HR Manager and HR Advisory team lead
+- Olivia — HR Officer
 
-```
-Submit request
-    │
-    ▼
-requester.dept_level.is_top_level == True
-    │
-    ▼
-Look up action_fallback_rules for (action, dept)
-    │  no fallback ─────────────────────────────► RoutingError
-    ▼
-Return [fallback approver]   (is_fallback=True)
-```
+## Business logic summary
 
----
+### Routing
 
-## Routing Rules
+1. Load the requester and action.
+2. Find the department-specific routing rule for that action.
+3. Validate that the requester has at most one active primary manager.
+4. Detect circular reporting before building the chain.
+5. If the requester is top-level, use the department fallback approver.
+6. Otherwise:
+   - step 1 = primary manager
+   - step 2 = primary manager's primary manager when required
+   - if step 2 is missing, use the department fallback approver
+7. Reject missing rule, missing primary manager, missing fallback rule, inactive
+   user, or inactive manager with explicit errors.
 
-| Action       | `requires_primary` | `requires_second_level` | Result               |
-|-------------|-------------------|------------------------|----------------------|
-| Annual Leave | ✓                 | ✓                      | Primary + 2nd level  |
-| Sick Leave   | ✓                 | ✗                      | Primary only         |
+### Team-lead permissions
 
-> Rules are stored per-department in `action_routing_rules` so each
-> department can have different approval requirements for the same action.
+A team lead may edit reporting-line data only when all conditions are true:
 
----
+- editor is an active team lead
+- target is active
+- editor and target share the same org-unit
+- target is lower level than the editor
+- target is not top-level/protected
+- target is not the editor
 
-## Fallback Rules
+### Unsupported scope
 
-When a top-level user (department head) submits a request, no in-department
-manager exists.  The `action_fallback_rules` table maps each
-`(action, department)` pair to a specific fallback user (HR Officer, Dean,
-Central Admin, etc.).
+- acting manager approval
+- delegation
 
-If no fallback rule is configured, `RoutingError` is raised — the system does
-not silently lose the request.
-
----
-
-## Test Case Table
-
-| TC# | User Type   | Action          | Setup                          | Expected Approver Flow                | Pass Criteria                                               |
-|-----|-------------|-----------------|--------------------------------|---------------------------------------|-------------------------------------------------------------|
-| 1   | Staff       | Annual Leave    | Normal hierarchy               | Primary (senior_lect) + 2nd (dept_head) | 2 steps; step 1 = senior_lect; step 2 = dept_head; no fallback |
-| 2   | Staff       | Sick Leave      | Normal hierarchy               | Primary only (senior_lect)            | 1 step; approver = senior_lect; no second-level step        |
-| 3   | Dept Head   | Annual Leave    | Fallback rule configured       | Fallback approver (hr_officer)        | 1 step; is_fallback=True; approver = hr_officer             |
-| 4   | Dept Head   | Sick Leave      | Fallback rule configured       | Fallback approver (hr_officer)        | 1 step; is_fallback=True; no crash for missing manager      |
-| 5   | Staff       | Unknown Action  | Action code does not exist     | Error — action not found              | RoutingError raised; message contains action code           |
-| 6   | Dept Head   | Annual Leave    | Fallback rule removed from DB  | Error — no fallback configured        | RoutingError raised; message contains 'fallback'            |
-| 7   | Staff       | Annual Leave    | Reporting line deactivated     | Error — primary manager not found     | RoutingError raised; message contains 'primary manager'     |
-| 8   | Staff       | Annual Leave    | A→B→C→A cycle in reporting lines | Error — circular reporting          | RoutingError raised; message contains 'circular' or 'cycle' |
-
----
-
-## Seed Data (used in tests)
-
-```
-Department: Computer Science (CS)
-  Level 1 — Head of Department  (is_top_level=True)  →  Dr. Head
-  Level 2 — Senior Lecturer                           →  Dr. Senior
-  Level 3 — Lecturer                                  →  Staff A
-
-Department: Human Resources (HR)
-  Level 1 — HR Officer  (fallback approver)           →  HR Officer
-
-Reporting lines (CS):
-  Staff A  → Dr. Senior  → Dr. Head  (no further manager)
-
-Actions:
-  annual_leave  →  requires_primary=True, requires_second_level=True
-  sick_leave    →  requires_primary=True, requires_second_level=False
-
-Fallback rules (CS):
-  annual_leave  →  HR Officer
-  sick_leave    →  HR Officer
-```
-
----
-
-## Running the Tests
+## Run locally
 
 ```bash
-# Install dependencies
 pip install -e ".[dev]"
-
-# Run all tests
 python -m pytest tests/ -v
-
-# Run with coverage
-python -m pytest tests/ --cov=src --cov-report=term-missing
-```
-
----
-
-## Manual Test Frontend
-
-The repository includes a browser-based manual test console for the 8 routing
-test cases. It is useful for validating the workflow without reading pytest
-output.
-
-```bash
-# Install dependencies first if needed
-pip install -e ".[dev]"
-
-# Start the manual test server
 python -m src.manual_test_app
 ```
 
 Open <http://127.0.0.1:8000>.
 
-For each test case, the page shows:
+## Full business/test case table
 
-| Field | Meaning |
-|-------|---------|
-| Input | Requester and action under test |
-| Setup | Data mutation applied before routing |
-| Expected output | Expected approver chain or error |
-| Pass criteria | Manual acceptance condition |
-| Actual output | JSON returned by the routing service |
-
-The manual console provides:
-
-* **Run this case** — executes one scenario against a fresh in-memory database.
-* **Run all test cases** — executes all 8 scenarios and updates pass/fail
-  badges on each card.
-
-The frontend calls these local endpoints:
-
-| Endpoint | Purpose |
-|----------|---------|
-| `GET /api/test-cases` | Returns test case metadata |
-| `GET /api/test-cases/{id}/run` | Runs a single case, e.g. `TC-1` |
-| `GET /api/run-all` | Runs all manual test cases |
-
-Each run creates a fresh SQLite in-memory database, seeds the sample
-university data, applies the test case setup, then executes the same
-`build_approval_chain` logic used by the automated tests.
-
----
-
-## Extensibility Notes
-
-The following features are **not** included in this POC but have been
-deliberately kept out of scope (and out of the schema):
-
-* Acting / delegation support
-* Project-account leave routing
-* Multi-department dual-reporting
-
-The schema and service layer are designed to accommodate these without
-breaking changes — adding optional foreign keys and new routing rule rows is
-sufficient for most extensions.
+| Business Case ID | Scenario | Input | Preconditions | Expected Output | Pass Criteria |
+|---|---|---|---|---|---|
+| BC-01 | Finance staff Annual Leave routing | Requester Peter, action `annual_leave` | Finance Annual Leave requires primary + second-level approval; Peter → Mary → Fiona | Mary then Fiona | Two approval steps are returned in order and neither is fallback |
+| BC-02 | Finance staff Sick Leave routing | Requester Peter, action `sick_leave` | Finance Sick Leave requires primary only; Peter → Mary | Mary only | One approval step is returned |
+| BC-03 | HR department-specific Annual Leave routing | Requester Olivia, action `annual_leave` | HR Annual Leave is configured differently from Finance and requires primary only; Olivia → Helen | Helen only | HR routing result differs from Finance routing for the same action |
+| BC-04 | Finance top-level fallback routing | Requester Fiona, action `annual_leave` | Fiona is Finance top-level user; Finance fallback approver is Henry | Henry as fallback approver | One fallback step is returned |
+| BC-05 | Org chart display with org-units and team leads | Department `FIN` | Finance Team and Payroll Team exist; Mary is Finance Team lead | Org chart shows org-units, members, direct managers, and Mary as team lead | UI/API returns Finance Team with Mary in the `team_leads` list |
+| BC-06 | Team lead edits lower-level user in same org-unit | Editor Mary, target Peter | Mary is Finance Team lead; Peter is lower-level Finance Team member | Allowed | Permission check returns `allowed = true` |
+| BC-07 | Team lead edits same-level user | Editor Mary, target Nina | Mary and Nina are both Senior Managers in Finance Team | Denied | Permission check returns `allowed = false` with lower-level explanation |
+| BC-08 | Team lead edits higher-level/protected user | Editor Mary, target Fiona | Fiona is top-level/protected and in Finance Team | Denied | Permission check returns `allowed = false` with protected-user explanation |
+| BC-09 | Team lead edits user in another org-unit | Editor Mary, target Quinn | Quinn belongs to Payroll Team, not Finance Team | Denied | Permission check returns `allowed = false` with outside-org-unit explanation |
+| BC-10 | Missing action routing rule | Requester Peter, action `training_request` | Action exists but no Finance routing rule exists | Error for missing routing rule | API/service raises clear routing-rule error |
+| BC-11 | Missing primary manager | Requester Peter, action `annual_leave` | Peter's active reporting line is deactivated | Error for missing primary manager | API/service raises clear primary-manager error |
+| BC-12 | Missing fallback rule | Requester Fiona, action `annual_leave` | Finance fallback rule is removed | Error for missing fallback rule | API/service raises clear fallback error |
+| BC-13 | Circular reporting chain | Requester Peter, action `annual_leave` | Extra line Fiona → Peter creates a cycle | Error for circular reporting | API/service raises clear cycle error |
+| BC-14 | Inactive manager/user | Requester Peter or inactive requester Peter, action `annual_leave` | Mary is inactive or Peter is inactive | Error for inactive manager/requester | API/service raises clear inactive-user error |
+| BC-15 | Multiple active primary managers | Requester Peter, action `annual_leave` | Peter has two active primary reporting lines | Error for multiple active primary managers | API/service raises explicit single-primary-manager error |
+| BC-16 | Acting/delegation unsupported | Any acting or delegation request | POC scope excludes acting/delegation | Not supported / future enhancement | No acting/delegation workflow is provided in UI or services |

@@ -3,73 +3,97 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Reporting-Line Manual Test Console</title>
+    <title>University Reporting-Line System POC</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <header class="hero">
       <div>
-        <p class="eyebrow">University Reporting-Line System POC</p>
-        <h1>Manual Test Console</h1>
+        <p class="eyebrow">University Reporting-Line System</p>
+        <h1>Department + Org-Unit Reporting POC</h1>
         <p>
-          Run the 8 approval-routing test cases manually and compare each actual
-          result with the expected output and pass criteria.
+          Explore the Finance and HR seed data, view department org charts,
+          simulate action routing, and test team-lead edit permission rules.
         </p>
       </div>
-      <button id="run-all" type="button">Run all test cases</button>
     </header>
 
-    <main>
-      <section class="summary" aria-live="polite">
-        <div>
-          <span class="summary-value" id="total-count">0</span>
-          <span class="summary-label">Total</span>
+    <main class="layout">
+      <section class="card">
+        <h2>Scenario Summary</h2>
+        <ul id="notes"></ul>
+      </section>
+
+      <section class="card">
+        <h2>Seed Data</h2>
+        <div id="seed-users" class="pill-grid"></div>
+      </section>
+
+      <section class="card">
+        <div class="section-header">
+          <h2>Department Org Chart</h2>
+          <label>
+            Department
+            <select id="department-select"></select>
+          </label>
         </div>
+        <div id="org-chart"></div>
+      </section>
+
+      <section class="card two-column">
         <div>
-          <span class="summary-value passed" id="pass-count">0</span>
-          <span class="summary-label">Passed</span>
+          <h2>Submit Action Simulation</h2>
+          <form id="routing-form" class="stack">
+            <label>
+              Requester
+              <select id="requester-select"></select>
+            </label>
+            <label>
+              Action
+              <select id="action-select"></select>
+            </label>
+            <button type="submit">Generate approval chain</button>
+          </form>
+          <pre id="routing-output">Choose a requester and action.</pre>
         </div>
+
         <div>
-          <span class="summary-value failed" id="fail-count">0</span>
-          <span class="summary-label">Failed</span>
+          <h2>Team-Lead Permission Simulation</h2>
+          <form id="permission-form" class="stack">
+            <label>
+              Editor
+              <select id="editor-select"></select>
+            </label>
+            <label>
+              Target user
+              <select id="target-select"></select>
+            </label>
+            <button type="submit">Check permission</button>
+          </form>
+          <pre id="permission-output">Choose an editor and target user.</pre>
         </div>
       </section>
 
-      <section id="test-cases" class="test-grid" aria-live="polite"></section>
-    </main>
-
-    <template id="test-card-template">
-      <article class="test-card">
-        <div class="test-card-header">
-          <div>
-            <span class="test-id"></span>
-            <h2></h2>
-          </div>
-          <span class="status-badge">Not run</span>
+      <section class="card">
+        <h2>Business Cases Covered</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Scenario</th>
+                <th>Input</th>
+                <th>Preconditions</th>
+                <th>Expected Output</th>
+                <th>Pass Criteria</th>
+              </tr>
+            </thead>
+            <tbody id="business-case-body"></tbody>
+          </table>
         </div>
-        <dl class="case-details">
-          <div>
-            <dt>Input</dt>
-            <dd class="case-input"></dd>
-          </div>
-          <div>
-            <dt>Setup</dt>
-            <dd class="case-setup"></dd>
-          </div>
-          <div>
-            <dt>Expected output</dt>
-            <dd class="case-expected"></dd>
-          </div>
-          <div>
-            <dt>Pass criteria</dt>
-            <dd class="case-pass"></dd>
-          </div>
-        </dl>
-        <button class="run-one" type="button">Run this case</button>
-        <pre class="actual-output" aria-label="Actual output">Not run yet.</pre>
-      </article>
-    </template>
+      </section>
+    </main>
 
     <script src="/app.js"></script>
   </body>
-</html>
+  </html>

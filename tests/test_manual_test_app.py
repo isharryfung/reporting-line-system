@@ -1,40 +1,52 @@
-"""Tests for the manual test frontend scenario runner."""
-
-from src.manual_test_app import public_test_cases, run_all_manual_test_cases, run_manual_test_case
-
-
-def test_public_test_cases_contains_all_manual_cases():
-    cases = public_test_cases()
-    assert len(cases) == 8
-    assert cases[0]["id"] == "TC-1"
-    assert "setup_fn" not in cases[0]
-    assert "expected" not in cases[0]
+from src.manual_test_app import (
+    BUSINESS_CASES,
+    build_bootstrap_payload,
+    simulate_action_request,
+    simulate_team_lead_permission,
+)
 
 
-def test_each_manual_test_case_passes():
-    results = run_all_manual_test_cases()
-    assert len(results) == 8
-    assert all(result["passed"] for result in results)
+def test_bootstrap_payload_exposes_seed_data_and_business_cases():
+    payload = build_bootstrap_payload()
+    assert [department["code"] for department in payload["departments"]] == ["FIN", "HR"]
+    assert any(user["name"] == "Mary" and user["is_team_lead"] for user in payload["users"])
+    assert len(BUSINESS_CASES) >= 6
 
 
-def test_manual_test_case_success_payload_contains_actual_steps():
-    result = run_manual_test_case("TC-1")
-    assert result["passed"] is True
-    assert result["actual"]["status"] == "success"
-    assert [step["approver"] for step in result["actual"]["steps"]] == [
-        "Dr. Senior",
-        "Dr. Head",
-    ]
+def test_bootstrap_payload_includes_org_chart_data():
+    payload = build_bootstrap_payload()
+    finance_chart = payload["org_charts"]["FIN"]
+    finance_team = next(
+        org_unit for org_unit in finance_chart["org_units"] if org_unit["code"] == "FIN-TEAM"
+    )
+    assert [lead["name"] for lead in finance_team["team_leads"]] == ["Mary"]
 
 
-def test_manual_test_case_error_payload_contains_error_message():
-    result = run_manual_test_case("TC-7")
-    assert result["passed"] is True
-    assert result["actual"]["status"] == "error"
-    assert "primary manager" in result["actual"]["error"].lower()
+def test_simulate_action_request_returns_generated_chain():
+    payload = build_bootstrap_payload()
+    peter = next(user for user in payload["users"] if user["name"] == "Peter")
+    result = simulate_action_request(peter["id"], "annual_leave")
+    assert result["status"] == "success"
+    assert [step["approver"] for step in result["steps"]] == ["Mary", "Fiona"]
 
 
-def test_unknown_manual_test_case_returns_not_found():
-    result = run_manual_test_case("TC-99")
-    assert result["passed"] is False
-    assert result["status"] == "not_found"
+def test_simulate_action_request_returns_error_for_missing_rule():
+    payload = build_bootstrap_payload()
+    peter = next(user for user in payload["users"] if user["name"] == "Peter")
+    result = simulate_action_request(peter["id"], "training_request")
+    assert result["status"] == "error"
+    assert "routing rule" in result["error"].lower()
+
+
+def test_simulate_team_lead_permission_returns_allowed_and_denied_cases():
+    payload = build_bootstrap_payload()
+    mary = next(user for user in payload["users"] if user["name"] == "Mary")
+    peter = next(user for user in payload["users"] if user["name"] == "Peter")
+    quinn = next(user for user in payload["users"] if user["name"] == "Quinn")
+
+    allowed = simulate_team_lead_permission(mary["id"], peter["id"])
+    denied = simulate_team_lead_permission(mary["id"], quinn["id"])
+
+    assert allowed["allowed"] is True
+    assert denied["allowed"] is False
+    assert "outside" in denied["reason"].lower()

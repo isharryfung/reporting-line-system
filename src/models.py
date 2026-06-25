@@ -3,17 +3,19 @@ SQLAlchemy ORM models for the university reporting-line system.
 
 Tables
 ------
-departments         — academic/admin departments
-dept_levels         — hierarchy levels within a department (rank 1 = highest)
-users               — staff members, each assigned to a dept + level
-reporting_lines     — direct manager relationships
-actions             — leave / workflow action types (e.g. Annual Leave)
-action_routing_rules— per-action approval level configuration
-action_fallback_rules—approver used when the requester is the top-level user
-approval_requests   — a submitted request for an action
-approval_steps      — individual approver nodes in an approval chain
-approval_actions    — record of each approver's decision
-audit_logs          — append-only audit trail
+departments                — department master data
+dept_levels                — hierarchy levels within a department
+org_units                  — teams / org-units owned by a department
+org_unit_memberships       — user membership and team-lead assignments in org-units
+users                      — staff members assigned to a department and level
+reporting_lines            — direct reporting relationships
+actions                    — action types such as Annual Leave and Sick Leave
+action_routing_rules       — department-specific routing rules for each action
+department_fallback_rules  — department-level fallback approvers
+approval_requests          — submitted workflow requests
+approval_steps             — generated approval steps
+approval_actions           — approver decisions
+audit_logs                 — append-only audit trail
 """
 
 from __future__ import annotations
@@ -40,14 +42,7 @@ class Base(DeclarativeBase):
     pass
 
 
-# ---------------------------------------------------------------------------
-# Department & levels
-# ---------------------------------------------------------------------------
-
-
 class Department(Base):
-    """One department in the university (e.g. Computer Science, HR)."""
-
     __tablename__ = "departments"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -57,23 +52,21 @@ class Department(Base):
     levels: Mapped[list[DeptLevel]] = relationship(
         "DeptLevel", back_populates="department", cascade="all, delete-orphan"
     )
+    org_units: Mapped[list[OrgUnit]] = relationship(
+        "OrgUnit", back_populates="department", cascade="all, delete-orphan"
+    )
     users: Mapped[list[User]] = relationship("User", back_populates="department")
+    fallback_rules: Mapped[list[DepartmentFallbackRule]] = relationship(
+        "DepartmentFallbackRule",
+        back_populates="department",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<Department {self.code!r}>"
 
 
 class DeptLevel(Base):
-    """
-    A seniority level within a department.
-
-    level_rank = 1  →  highest level (department head / protected)
-    level_rank = 2  →  one level below, etc.
-
-    Only users with level_rank > 1 may be edited / removed by department
-    admins. The top level (rank 1) is system-protected.
-    """
-
     __tablename__ = "dept_levels"
     __table_args__ = (UniqueConstraint("dept_id", "level_rank"),)
 
@@ -92,14 +85,29 @@ class DeptLevel(Base):
         return f"<DeptLevel dept={self.dept_id} rank={self.level_rank}>"
 
 
-# ---------------------------------------------------------------------------
-# Users
-# ---------------------------------------------------------------------------
+class OrgUnit(Base):
+    __tablename__ = "org_units"
+    __table_args__ = (UniqueConstraint("dept_id", "code"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    dept_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("departments.id"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    code: Mapped[str] = mapped_column(String(40), nullable=False)
+
+    department: Mapped[Department] = relationship("Department", back_populates="org_units")
+    memberships: Mapped[list[OrgUnitMembership]] = relationship(
+        "OrgUnitMembership",
+        back_populates="org_unit",
+        cascade="all, delete-orphan",
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<OrgUnit {self.code!r}>"
 
 
 class User(Base):
-    """A university staff member."""
-
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -114,10 +122,12 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     department: Mapped[Department] = relationship("Department", back_populates="users")
-    dept_level: Mapped[DeptLevel] = relationship(
-        "DeptLevel", back_populates="users"
+    dept_level: Mapped[DeptLevel] = relationship("DeptLevel", back_populates="users")
+    org_unit_memberships: Mapped[list[OrgUnitMembership]] = relationship(
+        "OrgUnitMembership",
+        back_populates="user",
+        cascade="all, delete-orphan",
     )
-    # reporting lines where this user is the subordinate
     reporting_lines: Mapped[list[ReportingLine]] = relationship(
         "ReportingLine",
         foreign_keys="ReportingLine.user_id",
@@ -128,18 +138,31 @@ class User(Base):
         return f"<User {self.email!r}>"
 
 
-# ---------------------------------------------------------------------------
-# Reporting lines
-# ---------------------------------------------------------------------------
+class OrgUnitMembership(Base):
+    __tablename__ = "org_unit_memberships"
+    __table_args__ = (UniqueConstraint("org_unit_id", "user_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    org_unit_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("org_units.id"), nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id"), nullable=False
+    )
+    is_team_lead: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    org_unit: Mapped[OrgUnit] = relationship("OrgUnit", back_populates="memberships")
+    user: Mapped[User] = relationship("User", back_populates="org_unit_memberships")
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return (
+            f"<OrgUnitMembership org_unit={self.org_unit_id} user={self.user_id} "
+            f"team_lead={self.is_team_lead}>"
+        )
 
 
 class ReportingLine(Base):
-    """
-    Represents a direct reporting relationship: user reports to manager.
-
-    is_active = False means the relationship has ended (for history).
-    """
-
     __tablename__ = "reporting_lines"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -152,6 +175,7 @@ class ReportingLine(Base):
     dept_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("departments.id"), nullable=False
     )
+    is_primary: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     effective_from: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )
@@ -166,17 +190,13 @@ class ReportingLine(Base):
     manager: Mapped[User] = relationship("User", foreign_keys=[manager_id])
 
     def __repr__(self) -> str:  # pragma: no cover
-        return f"<ReportingLine user={self.user_id} → manager={self.manager_id}>"
-
-
-# ---------------------------------------------------------------------------
-# Actions
-# ---------------------------------------------------------------------------
+        return (
+            f"<ReportingLine user={self.user_id} → manager={self.manager_id} "
+            f"primary={self.is_primary} active={self.is_active}>"
+        )
 
 
 class Action(Base):
-    """A workflow action type, e.g. Annual Leave, Sick Leave."""
-
     __tablename__ = "actions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -186,23 +206,12 @@ class Action(Base):
     routing_rules: Mapped[list[ActionRoutingRule]] = relationship(
         "ActionRoutingRule", back_populates="action", cascade="all, delete-orphan"
     )
-    fallback_rules: Mapped[list[ActionFallbackRule]] = relationship(
-        "ActionFallbackRule", back_populates="action", cascade="all, delete-orphan"
-    )
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<Action {self.code!r}>"
 
 
 class ActionRoutingRule(Base):
-    """
-    Defines which approval levels are required for an action within a
-    department.
-
-    requires_primary      — must always be True for any real action.
-    requires_second_level — True for Annual Leave, False for Sick Leave.
-    """
-
     __tablename__ = "action_routing_rules"
     __table_args__ = (UniqueConstraint("action_id", "dept_id"),)
 
@@ -230,22 +239,11 @@ class ActionRoutingRule(Base):
         )
 
 
-class ActionFallbackRule(Base):
-    """
-    When the requester is the top-level user in the department (no higher
-    manager exists), route the approval to this fallback approver instead.
-
-    fallback_user_id — a specific user (e.g. HR Officer, Dean, Central Admin).
-    fallback_label   — human-readable label for display / audit.
-    """
-
-    __tablename__ = "action_fallback_rules"
-    __table_args__ = (UniqueConstraint("action_id", "dept_id"),)
+class DepartmentFallbackRule(Base):
+    __tablename__ = "department_fallback_rules"
+    __table_args__ = (UniqueConstraint("dept_id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    action_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("actions.id"), nullable=False
-    )
     dept_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("departments.id"), nullable=False
     )
@@ -254,25 +252,19 @@ class ActionFallbackRule(Base):
     )
     fallback_label: Mapped[str] = mapped_column(String(120), nullable=False)
 
-    action: Mapped[Action] = relationship("Action", back_populates="fallback_rules")
-    department: Mapped[Department] = relationship("Department")
+    department: Mapped[Department] = relationship(
+        "Department", back_populates="fallback_rules"
+    )
     fallback_user: Mapped[User] = relationship("User")
 
     def __repr__(self) -> str:  # pragma: no cover
         return (
-            f"<ActionFallbackRule action={self.action_id} dept={self.dept_id} "
+            f"<DepartmentFallbackRule dept={self.dept_id} "
             f"fallback_user={self.fallback_user_id}>"
         )
 
 
-# ---------------------------------------------------------------------------
-# Approval workflow
-# ---------------------------------------------------------------------------
-
-
 class ApprovalRequest(Base):
-    """A staff member's submitted request (e.g. an annual leave application)."""
-
     __tablename__ = "approval_requests"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -282,7 +274,6 @@ class ApprovalRequest(Base):
     action_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("actions.id"), nullable=False
     )
-    # pending | approved | rejected | error
     status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
@@ -305,8 +296,6 @@ class ApprovalRequest(Base):
 
 
 class ApprovalStep(Base):
-    """One node in an approval chain (one approver)."""
-
     __tablename__ = "approval_steps"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -317,7 +306,6 @@ class ApprovalStep(Base):
     approver_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id"), nullable=False
     )
-    # pending | approved | rejected
     status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
     is_fallback: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
@@ -339,15 +327,12 @@ class ApprovalStep(Base):
 
 
 class ApprovalAction(Base):
-    """Records an approver's decision on an ApprovalStep."""
-
     __tablename__ = "approval_actions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     step_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("approval_steps.id"), nullable=False
     )
-    # approved | rejected | delegated (future extension)
     action_taken: Mapped[str] = mapped_column(String(40), nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     taken_at: Mapped[datetime] = mapped_column(
@@ -359,19 +344,10 @@ class ApprovalAction(Base):
     )
 
     def __repr__(self) -> str:  # pragma: no cover
-        return (
-            f"<ApprovalAction step={self.step_id} action={self.action_taken!r}>"
-        )
-
-
-# ---------------------------------------------------------------------------
-# Audit log
-# ---------------------------------------------------------------------------
+        return f"<ApprovalAction step={self.step_id} action={self.action_taken!r}>"
 
 
 class AuditLog(Base):
-    """Append-only audit trail for all significant system events."""
-
     __tablename__ = "audit_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -384,6 +360,4 @@ class AuditLog(Base):
     )
 
     def __repr__(self) -> str:  # pragma: no cover
-        return (
-            f"<AuditLog {self.entity_type}/{self.entity_id} {self.action!r}>"
-        )
+        return f"<AuditLog {self.entity_type}/{self.entity_id} {self.action!r}>"
