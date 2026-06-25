@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Reporting-Line Manual Test Console</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="hero">
+      <div>
+        <p class="eyebrow">University Reporting-Line System POC</p>
+        <h1>Manual Test Console</h1>
+        <p>
+          Run the 8 approval-routing test cases manually and compare each actual
+          result with the expected output and pass criteria.
+        </p>
+      </div>
+      <button id="run-all" type="button">Run all test cases</button>
+    </header>
+
+    <main>
+      <section class="summary" aria-live="polite">
+        <div>
+          <span class="summary-value" id="total-count">0</span>
+          <span class="summary-label">Total</span>
+        </div>
+        <div>
+          <span class="summary-value passed" id="pass-count">0</span>
+          <span class="summary-label">Passed</span>
+        </div>
+        <div>
+          <span class="summary-value failed" id="fail-count">0</span>
+          <span class="summary-label">Failed</span>
+        </div>
+      </section>
+
+      <section id="test-cases" class="test-grid" aria-live="polite"></section>
+    </main>
+
+    <template id="test-card-template">
+      <article class="test-card">
+        <div class="test-card-header">
+          <div>
+            <span class="test-id"></span>
+            <h2></h2>
+          </div>
+          <span class="status-badge">Not run</span>
+        </div>
+        <dl class="case-details">
+          <div>
+            <dt>Input</dt>
+            <dd class="case-input"></dd>
+          </div>
+          <div>
+            <dt>Setup</dt>
+            <dd class="case-setup"></dd>
+          </div>
+          <div>
+            <dt>Expected output</dt>
+            <dd class="case-expected"></dd>
+          </div>
+          <div>
+            <dt>Pass criteria</dt>
+            <dd class="case-pass"></dd>
+          </div>
+        </dl>
+        <button class="run-one" type="button">Run this case</button>
+        <pre class="actual-output" aria-label="Actual output">Not run yet.</pre>
+      </article>
+    </template>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
