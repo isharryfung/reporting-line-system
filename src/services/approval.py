@@ -10,7 +10,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from src.models import ApprovalAction, ApprovalRequest, ApprovalStep
-from src.services.routing import ApprovalChain, RoutingError, build_approval_chain
+from src.services.routing import ApprovalChain, build_approval_chain
 
 
 def submit_request(

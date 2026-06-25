@@ -1,95 +1,194 @@
-const testCaseContainer = document.querySelector("#test-cases");
-const template = document.querySelector("#test-card-template");
-const runAllButton = document.querySelector("#run-all");
-const totalCount = document.querySelector("#total-count");
-const passCount = document.querySelector("#pass-count");
-const failCount = document.querySelector("#fail-count");
+const departmentSelect = document.querySelector("#department-select");
+const requesterSelect = document.querySelector("#requester-select");
+const actionSelect = document.querySelector("#action-select");
+const editorSelect = document.querySelector("#editor-select");
+const targetSelect = document.querySelector("#target-select");
+const routingForm = document.querySelector("#routing-form");
+const permissionForm = document.querySelector("#permission-form");
+const routingOutput = document.querySelector("#routing-output");
+const permissionOutput = document.querySelector("#permission-output");
+const seedUsers = document.querySelector("#seed-users");
+const notes = document.querySelector("#notes");
+const orgChart = document.querySelector("#org-chart");
+const businessCaseBody = document.querySelector("#business-case-body");
 
-const resultState = new Map();
+let bootstrap = null;
 
-function setSummary() {
-  const results = [...resultState.values()];
-  totalCount.textContent = document.querySelectorAll(".test-card").length;
-  passCount.textContent = results.filter(Boolean).length;
-  failCount.textContent = results.filter((value) => value === false).length;
+function renderPrettyJson(value) {
+  return JSON.stringify(value, null, 2);
 }
 
-function renderActual(actual) {
-  return JSON.stringify(actual, null, 2);
+function createOption(value, label) {
+  const option = document.createElement("option");
+  option.value = value;
+  option.textContent = label;
+  return option;
 }
 
-function updateCard(card, result) {
-  const badge = card.querySelector(".status-badge");
-  const output = card.querySelector(".actual-output");
-
-  resultState.set(result.id, Boolean(result.passed));
-  badge.textContent = result.passed ? "Pass" : "Fail";
-  badge.classList.toggle("pass", result.passed);
-  badge.classList.toggle("fail", !result.passed);
-  output.textContent = renderActual(result);
-  setSummary();
+function renderSeedUsers(users) {
+  seedUsers.replaceChildren(
+    ...users.map((user) => {
+      const pill = document.createElement("article");
+      pill.className = "pill";
+      pill.innerHTML = `
+        <strong>${user.name}</strong>
+        <span>${user.department_code} · ${user.level_name}</span>
+        <span>${user.org_units.join(", ") || "No org-unit"}</span>
+        <span>${user.is_team_lead ? "Team Lead" : "Member"}</span>
+      `;
+      return pill;
+    })
+  );
 }
 
-async function runCase(id, card) {
-  const button = card.querySelector(".run-one");
-  button.disabled = true;
-  button.textContent = "Running...";
-  try {
-    const response = await fetch(`/api/test-cases/${encodeURIComponent(id)}/run`);
-    const result = await response.json();
-    updateCard(card, result);
-  } catch (error) {
-    updateCard(card, {
-      id,
-      passed: false,
-      actual: { status: "frontend_error", error: String(error) },
-    });
-  } finally {
-    button.disabled = false;
-    button.textContent = "Run this case";
-  }
+function renderNotes(items) {
+  notes.replaceChildren(
+    ...items.map((item) => {
+      const li = document.createElement("li");
+      li.textContent = item;
+      return li;
+    })
+  );
 }
 
-function createCard(testCase) {
-  const fragment = template.content.cloneNode(true);
-  const card = fragment.querySelector(".test-card");
-
-  card.dataset.testId = testCase.id;
-  card.querySelector(".test-id").textContent = testCase.id;
-  card.querySelector("h2").textContent = testCase.title;
-  card.querySelector(".case-input").textContent = testCase.input;
-  card.querySelector(".case-setup").textContent = testCase.setup;
-  card.querySelector(".case-expected").textContent = testCase.expected_output;
-  card.querySelector(".case-pass").textContent = testCase.pass_criteria;
-  card.querySelector(".run-one").addEventListener("click", () => runCase(testCase.id, card));
-
-  return card;
+function renderBusinessCases(cases) {
+  businessCaseBody.replaceChildren(
+    ...cases.map((item) => {
+      const row = document.createElement("tr");
+      row.innerHTML = `
+        <td>${item.id}</td>
+        <td>${item.scenario}</td>
+        <td>${item.input}</td>
+        <td>${item.preconditions}</td>
+        <td>${item.expected_output}</td>
+        <td>${item.pass_criteria}</td>
+      `;
+      return row;
+    })
+  );
 }
 
-async function loadTestCases() {
-  const response = await fetch("/api/test-cases");
+function renderOrgChart(chart) {
+  const units = chart.org_units
+    .map((orgUnit) => {
+      const teamLeads = orgUnit.team_leads.map((lead) => lead.name).join(", ") || "None";
+      const members = orgUnit.members
+        .map(
+          (member) =>
+            `<li><strong>${member.name}</strong> — ${member.level_name} · Manager: ${
+              member.manager_name || "None"
+            }${member.is_team_lead ? " · Team Lead" : ""}</li>`
+        )
+        .join("");
+      return `
+        <article class="org-unit-card">
+          <h3>${orgUnit.name}</h3>
+          <p><strong>Team leads:</strong> ${teamLeads}</p>
+          <ul>${members}</ul>
+        </article>
+      `;
+    })
+    .join("");
+
+  const unassigned = chart.unassigned_users.length
+    ? `
+      <article class="org-unit-card">
+        <h3>Unassigned / department leadership</h3>
+        <ul>
+          ${chart.unassigned_users
+            .map(
+              (user) =>
+                `<li><strong>${user.name}</strong> — ${user.level_name}${
+                  user.is_team_lead ? " · Team Lead" : ""
+                }</li>`
+            )
+            .join("")}
+        </ul>
+      </article>
+    `
+    : "";
+
+  const fallback = chart.fallback_approver
+    ? `${chart.fallback_approver.name} (${chart.fallback_approver.label})`
+    : "Not configured";
+
+  orgChart.innerHTML = `
+    <p><strong>Department fallback approver:</strong> ${fallback}</p>
+    <div class="org-unit-grid">${units}${unassigned}</div>
+  `;
+}
+
+async function loadOrgChart(departmentCode) {
+  const response = await fetch(`/api/org-chart?department=${encodeURIComponent(departmentCode)}`);
   const payload = await response.json();
-  testCaseContainer.replaceChildren(...payload.test_cases.map(createCard));
-  setSummary();
+  renderOrgChart(payload);
 }
 
-async function runAll() {
-  runAllButton.disabled = true;
-  runAllButton.textContent = "Running all...";
-  try {
-    const response = await fetch("/api/run-all");
-    const payload = await response.json();
-    for (const result of payload.results) {
-      const card = document.querySelector(`[data-test-id="${result.id}"]`);
-      if (card) {
-        updateCard(card, result);
-      }
-    }
-  } finally {
-    runAllButton.disabled = false;
-    runAllButton.textContent = "Run all test cases";
-  }
+async function loadBootstrap() {
+  const response = await fetch("/api/bootstrap");
+  bootstrap = await response.json();
+
+  renderSeedUsers(bootstrap.users);
+  renderNotes(bootstrap.notes);
+  renderBusinessCases(bootstrap.business_cases);
+
+  departmentSelect.replaceChildren(
+    ...bootstrap.departments.map((department) =>
+      createOption(department.code, `${department.name} (${department.code})`)
+    )
+  );
+  requesterSelect.replaceChildren(
+    ...bootstrap.users.map((user) =>
+      createOption(user.id, `${user.name} — ${user.department_code} / ${user.level_name}`)
+    )
+  );
+  editorSelect.replaceChildren(
+    ...bootstrap.users.map((user) =>
+      createOption(user.id, `${user.name} — ${user.department_code} / ${user.level_name}`)
+    )
+  );
+  targetSelect.replaceChildren(
+    ...bootstrap.users.map((user) =>
+      createOption(user.id, `${user.name} — ${user.department_code} / ${user.level_name}`)
+    )
+  );
+  actionSelect.replaceChildren(
+    ...bootstrap.actions.map((action) =>
+      createOption(action.code, action.name)
+    )
+  );
+
+  await loadOrgChart(departmentSelect.value);
 }
 
-runAllButton.addEventListener("click", runAll);
-loadTestCases();
+departmentSelect.addEventListener("change", () => loadOrgChart(departmentSelect.value));
+
+routingForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const response = await fetch("/api/simulate-request", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      requester_id: Number(requesterSelect.value),
+      action_code: actionSelect.value,
+    }),
+  });
+  const payload = await response.json();
+  routingOutput.textContent = renderPrettyJson(payload);
+});
+
+permissionForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const response = await fetch("/api/team-lead-permission", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      editor_id: Number(editorSelect.value),
+      target_user_id: Number(targetSelect.value),
+    }),
+  });
+  const payload = await response.json();
+  permissionOutput.textContent = renderPrettyJson(payload);
+});
+
+loadBootstrap();

@@ -1,53 +1,50 @@
 # reporting-line-system
 
-A proof-of-concept university reporting-line and approval-routing system built with Python and SQLite.
+University reporting-line system proof-of-concept built with Python, SQLAlchemy, SQLite, and a lightweight browser UI.
+
+## What this POC covers
+
+- Department-owned reporting structures
+- Org-units/teams inside departments
+- Team lead assignments as org-unit roles
+- One active primary manager per staff member
+- Department-specific action routing for Annual Leave and Sick Leave
+- Department-level fallback approvers for top-level users
+- Org chart display and team-lead permission simulation
+
+Acting/delegation is intentionally **out of scope** for this POC and documented as a future enhancement.
 
 ## Quick start
 
 ```bash
 pip install -e ".[dev]"
 python -m pytest tests/ -v
-```
-
-## Manual test frontend
-
-Run the browser-based manual test console:
-
-```bash
 python -m src.manual_test_app
 ```
 
-Then open <http://127.0.0.1:8000> and click either:
-- **Run this case** on one scenario, or
-- **Run all test cases** to execute all 8 routing cases.
+Then open <http://127.0.0.1:8000>.
+
+## Frontend POC
+
+The browser UI lets you:
+
+- inspect seed users for Finance and HR
+- switch between department org charts
+- simulate action submission and see the generated approval chain
+- simulate team-lead edit permission decisions
+
+## Key sample scenario
+
+- **Mary** is a **Senior Manager** in **Finance**
+- Mary is also the **team lead of Finance Team**
+- Mary can edit lower-level users in Finance Team
+- Mary cannot edit herself, same-level users, protected top-level users, or users outside Finance Team
 
 ## Documentation
 
 See [docs/WORKFLOW.md](docs/WORKFLOW.md) for:
-- Architecture overview
-- Database schema
-- Routing workflow diagrams
-- Full test-case table (8 scenarios)
-- Manual frontend usage
 
-## Structure
-
-```
-src/
-├── models.py            ORM models (SQLAlchemy)
-├── database.py          Engine / session helpers
-├── manual_test_app.py   Standard-library manual test web server
-└── services/
-    ├── routing.py       Approval chain routing logic
-    └── approval.py      Workflow: submit requests, record decisions
-
-frontend/
-├── index.html           Manual test console UI
-├── app.js               Runs individual/all manual test cases
-└── styles.css           Console styling
-
-tests/
-├── conftest.py          Fixtures and seed data
-├── test_routing.py      28 tests covering all 8 test-case scenarios
-└── test_manual_test_app.py Manual frontend scenario runner tests
-```
+- schema summary
+- business logic summary
+- full business/test case table
+- local run instructions
