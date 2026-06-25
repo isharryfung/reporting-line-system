@@ -1,12 +1,16 @@
 const departmentSelect = document.querySelector("#department-select");
 const requesterSelect = document.querySelector("#requester-select");
 const actionSelect = document.querySelector("#action-select");
+const requestAtInput = document.querySelector("#request-at-input");
+const projectCodeInput = document.querySelector("#project-code-input");
 const editorSelect = document.querySelector("#editor-select");
 const targetSelect = document.querySelector("#target-select");
 const routingForm = document.querySelector("#routing-form");
 const permissionForm = document.querySelector("#permission-form");
 const routingOutput = document.querySelector("#routing-output");
 const permissionOutput = document.querySelector("#permission-output");
+const scenarioList = document.querySelector("#scenario-list");
+const scenarioOutput = document.querySelector("#scenario-output");
 const seedUsers = document.querySelector("#seed-users");
 const notes = document.querySelector("#notes");
 const orgChart = document.querySelector("#org-chart");
@@ -72,6 +76,9 @@ function renderOrgChart(chart) {
   const units = chart.org_units
     .map((orgUnit) => {
       const teamLeads = orgUnit.team_leads.map((lead) => lead.name).join(", ") || "None";
+      const coHeads = orgUnit.co_heads
+        .map((lead) => `${lead.name}${lead.is_primary ? " (primary)" : ""} · ${lead.policy}`)
+        .join(", ");
       const members = orgUnit.members
         .map(
           (member) =>
@@ -84,6 +91,7 @@ function renderOrgChart(chart) {
         <article class="org-unit-card">
           <h3>${orgUnit.name}</h3>
           <p><strong>Team leads:</strong> ${teamLeads}</p>
+          <p><strong>Co-heads:</strong> ${coHeads || "None"}</p>
           <ul>${members}</ul>
         </article>
       `;
@@ -118,6 +126,31 @@ function renderOrgChart(chart) {
   `;
 }
 
+function renderAdvancedScenarios(items) {
+  scenarioList.replaceChildren(
+    ...items.map((item) => {
+      const article = document.createElement("article");
+      article.className = "pill";
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = item.title;
+      button.addEventListener("click", async () => {
+        const response = await fetch("/api/simulate-scenario", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scenario_id: item.id }),
+        });
+        const payload = await response.json();
+        scenarioOutput.textContent = renderPrettyJson(payload);
+      });
+      const description = document.createElement("span");
+      description.textContent = item.description;
+      article.append(button, description);
+      return article;
+    })
+  );
+}
+
 async function loadOrgChart(departmentCode) {
   const response = await fetch(`/api/org-chart?department=${encodeURIComponent(departmentCode)}`);
   const payload = await response.json();
@@ -131,6 +164,7 @@ async function loadBootstrap() {
   renderSeedUsers(bootstrap.users);
   renderNotes(bootstrap.notes);
   renderBusinessCases(bootstrap.business_cases);
+  renderAdvancedScenarios(bootstrap.advanced_scenarios);
 
   departmentSelect.replaceChildren(
     ...bootstrap.departments.map((department) =>
@@ -171,6 +205,8 @@ routingForm.addEventListener("submit", async (event) => {
     body: JSON.stringify({
       requester_id: Number(requesterSelect.value),
       action_code: actionSelect.value,
+      request_at: requestAtInput.value ? `${requestAtInput.value}:00+00:00` : null,
+      project_code: projectCodeInput.value || null,
     }),
   });
   const payload = await response.json();

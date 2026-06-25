@@ -52,6 +52,14 @@
               Action
               <select id="action-select"></select>
             </label>
+            <label>
+              Request date (optional)
+              <input id="request-at-input" type="datetime-local" />
+            </label>
+            <label>
+              Project code (optional)
+              <input id="project-code-input" type="text" placeholder="UTP" />
+            </label>
             <button type="submit">Generate approval chain</button>
           </form>
           <pre id="routing-output">Choose a requester and action.</pre>
@@ -72,6 +80,17 @@
           </form>
           <pre id="permission-output">Choose an editor and target user.</pre>
         </div>
+      </section>
+
+      <section class="card">
+        <h2>Advanced Scenario Simulations</h2>
+        <p>
+          Run first-class simulations for acting, peer coverage, delegation,
+          handover overlap, cross-department projects, co-heads, and
+          self-approval prevention.
+        </p>
+        <div id="scenario-list" class="scenario-grid"></div>
+        <pre id="scenario-output">Choose a scenario.</pre>
       </section>
 
       <section class="card">

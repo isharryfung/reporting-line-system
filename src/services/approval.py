@@ -7,6 +7,8 @@ Internally delegates routing to the routing service.
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlalchemy.orm import Session
 
 from src.models import ApprovalAction, ApprovalRequest, ApprovalStep
@@ -17,6 +19,8 @@ def submit_request(
     session: Session,
     requester_id: int,
     action_code: str,
+    request_at: datetime | None = None,
+    project_code: str | None = None,
 ) -> ApprovalRequest:
     """
     Build an approval chain and persist an ApprovalRequest with its steps.
@@ -27,7 +31,13 @@ def submit_request(
     ------
     RoutingError  if the chain cannot be built (propagated from routing service).
     """
-    chain: ApprovalChain = build_approval_chain(session, requester_id, action_code)
+    chain: ApprovalChain = build_approval_chain(
+        session,
+        requester_id,
+        action_code,
+        request_at=request_at,
+        project_code=project_code,
+    )
 
     request = ApprovalRequest(
         requester_id=requester_id,

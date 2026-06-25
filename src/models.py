@@ -12,6 +12,14 @@ reporting_lines            — direct reporting relationships
 actions                    — action types such as Annual Leave and Sick Leave
 action_routing_rules       — department-specific routing rules for each action
 department_fallback_rules  — department-level fallback approvers
+acting_assignments         — temporary acting approver overlays
+coverage_assignments       — temporary peer coverage overlays
+delegation_assignments     — temporary delegated approver overlays
+handover_overlaps          — temporary manager transition policies
+projects                   — cross-department project master data
+project_assignments        — project participation
+project_reporting_lines    — project-scoped approver overlays
+co_head_assignments        — co-head approval group overlays
 approval_requests          — submitted workflow requests
 approval_steps             — generated approval steps
 approval_actions           — approver decisions
@@ -202,6 +210,9 @@ class Action(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False, unique=True)
     code: Mapped[str] = mapped_column(String(40), nullable=False, unique=True)
+    is_project_scoped: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
 
     routing_rules: Mapped[list[ActionRoutingRule]] = relationship(
         "ActionRoutingRule", back_populates="action", cascade="all, delete-orphan"
@@ -262,6 +273,234 @@ class DepartmentFallbackRule(Base):
             f"<DepartmentFallbackRule dept={self.dept_id} "
             f"fallback_user={self.fallback_user_id}>"
         )
+
+
+class ActingAssignment(Base):
+    __tablename__ = "acting_assignments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    principal_user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id"), nullable=False
+    )
+    acting_user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id"), nullable=False
+    )
+    dept_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("departments.id"), nullable=True
+    )
+    org_unit_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("org_units.id"), nullable=True
+    )
+    action_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("actions.id"), nullable=True
+    )
+    effective_from: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    effective_to: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    principal_user: Mapped[User] = relationship("User", foreign_keys=[principal_user_id])
+    acting_user: Mapped[User] = relationship("User", foreign_keys=[acting_user_id])
+    department: Mapped[Department | None] = relationship("Department")
+    org_unit: Mapped[OrgUnit | None] = relationship("OrgUnit")
+    action: Mapped[Action | None] = relationship("Action")
+
+
+class CoverageAssignment(Base):
+    __tablename__ = "coverage_assignments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    covered_user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id"), nullable=False
+    )
+    coverage_user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id"), nullable=False
+    )
+    dept_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("departments.id"), nullable=True
+    )
+    org_unit_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("org_units.id"), nullable=True
+    )
+    action_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("actions.id"), nullable=True
+    )
+    effective_from: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    effective_to: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    covered_user: Mapped[User] = relationship("User", foreign_keys=[covered_user_id])
+    coverage_user: Mapped[User] = relationship("User", foreign_keys=[coverage_user_id])
+    department: Mapped[Department | None] = relationship("Department")
+    org_unit: Mapped[OrgUnit | None] = relationship("OrgUnit")
+    action: Mapped[Action | None] = relationship("Action")
+
+
+class DelegationAssignment(Base):
+    __tablename__ = "delegation_assignments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    delegator_user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id"), nullable=False
+    )
+    delegate_user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id"), nullable=False
+    )
+    dept_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("departments.id"), nullable=True
+    )
+    org_unit_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("org_units.id"), nullable=True
+    )
+    action_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("actions.id"), nullable=True
+    )
+    effective_from: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    effective_to: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    delegator_user: Mapped[User] = relationship("User", foreign_keys=[delegator_user_id])
+    delegate_user: Mapped[User] = relationship("User", foreign_keys=[delegate_user_id])
+    department: Mapped[Department | None] = relationship("Department")
+    org_unit: Mapped[OrgUnit | None] = relationship("OrgUnit")
+    action: Mapped[Action | None] = relationship("Action")
+
+
+class HandoverOverlap(Base):
+    __tablename__ = "handover_overlaps"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    requester_user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id"), nullable=False
+    )
+    old_approver_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id"), nullable=False
+    )
+    new_approver_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id"), nullable=False
+    )
+    dept_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("departments.id"), nullable=True
+    )
+    org_unit_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("org_units.id"), nullable=True
+    )
+    action_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("actions.id"), nullable=True
+    )
+    effective_from: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    effective_to: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    policy: Mapped[str] = mapped_column(String(60), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    requester_user: Mapped[User] = relationship("User", foreign_keys=[requester_user_id])
+    old_approver: Mapped[User] = relationship("User", foreign_keys=[old_approver_id])
+    new_approver: Mapped[User] = relationship("User", foreign_keys=[new_approver_id])
+    department: Mapped[Department | None] = relationship("Department")
+    org_unit: Mapped[OrgUnit | None] = relationship("OrgUnit")
+    action: Mapped[Action | None] = relationship("Action")
+
+
+class Project(Base):
+    __tablename__ = "projects"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    code: Mapped[str] = mapped_column(String(40), nullable=False, unique=True)
+    home_dept_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("departments.id"), nullable=True
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    home_department: Mapped[Department | None] = relationship("Department")
+    assignments: Mapped[list[ProjectAssignment]] = relationship(
+        "ProjectAssignment",
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
+    reporting_lines: Mapped[list[ProjectReportingLine]] = relationship(
+        "ProjectReportingLine",
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
+
+
+class ProjectAssignment(Base):
+    __tablename__ = "project_assignments"
+    __table_args__ = (UniqueConstraint("project_id", "user_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("projects.id"), nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    role_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    project: Mapped[Project] = relationship("Project", back_populates="assignments")
+    user: Mapped[User] = relationship("User")
+
+
+class ProjectReportingLine(Base):
+    __tablename__ = "project_reporting_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("projects.id"), nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    project_manager_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id"), nullable=False
+    )
+    action_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("actions.id"), nullable=True
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    project: Mapped[Project] = relationship("Project", back_populates="reporting_lines")
+    user: Mapped[User] = relationship("User", foreign_keys=[user_id])
+    project_manager: Mapped[User] = relationship("User", foreign_keys=[project_manager_id])
+    action: Mapped[Action | None] = relationship("Action")
+
+
+class CoHeadAssignment(Base):
+    __tablename__ = "co_head_assignments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    dept_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("departments.id"), nullable=True
+    )
+    org_unit_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("org_units.id"), nullable=True
+    )
+    action_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("actions.id"), nullable=True
+    )
+    policy: Mapped[str] = mapped_column(String(60), nullable=False)
+    sequence_order: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    is_primary: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    user: Mapped[User] = relationship("User")
+    department: Mapped[Department | None] = relationship("Department")
+    org_unit: Mapped[OrgUnit | None] = relationship("OrgUnit")
+    action: Mapped[Action | None] = relationship("Action")
 
 
 class ApprovalRequest(Base):

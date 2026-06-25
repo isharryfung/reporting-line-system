@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -13,7 +14,11 @@ from src.sample_data import seed_sample_data
 from src.services.approval import submit_request
 from src.services.org_chart import get_department_org_chart
 from src.services.permissions import validate_team_lead_edit_permission
-from src.services.routing import RoutingError
+from src.services.routing import (
+    RoutingError,
+    approval_chain_to_dict,
+    build_approval_chain,
+)
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -23,7 +28,7 @@ FRONTEND_DIR = ROOT_DIR / "frontend"
 BUSINESS_CASES = [
     {
         "id": "BC-01",
-        "scenario": "Finance staff Annual Leave routes to primary and second-level approvers.",
+        "scenario": "Official Annual Leave route uses primary and second-level approvers.",
         "input": "Requester: Peter; Action: Annual Leave",
         "preconditions": "Finance annual_leave requires primary + second level.",
         "expected_output": "Mary then Fiona.",
@@ -31,7 +36,7 @@ BUSINESS_CASES = [
     },
     {
         "id": "BC-02",
-        "scenario": "Finance staff Sick Leave routes to primary approver only.",
+        "scenario": "Official Sick Leave route uses only the primary approver.",
         "input": "Requester: Peter; Action: Sick Leave",
         "preconditions": "Finance sick_leave requires primary only.",
         "expected_output": "Mary only.",
@@ -39,44 +44,188 @@ BUSINESS_CASES = [
     },
     {
         "id": "BC-03",
-        "scenario": "HR staff Annual Leave uses department-specific routing.",
-        "input": "Requester: Olivia; Action: Annual Leave",
-        "preconditions": "HR annual_leave requires primary only.",
-        "expected_output": "Helen only.",
-        "pass_criteria": "HR routing differs from Finance for the same action.",
-    },
-    {
-        "id": "BC-04",
-        "scenario": "Finance director uses department-level fallback approver.",
+        "scenario": "Department fallback covers top-level users.",
         "input": "Requester: Fiona; Action: Annual Leave",
         "preconditions": "Finance fallback approver is Henry.",
         "expected_output": "Henry as fallback approver.",
-        "pass_criteria": "Fallback step is returned for the top-level requester.",
+        "pass_criteria": "Fallback step is returned for top-level requester.",
+    },
+    {
+        "id": "BC-04",
+        "scenario": "Team lead may edit lower-level user in same org-unit.",
+        "input": "Editor: Mary; Target: Peter",
+        "preconditions": "Mary leads Finance Team; Peter is lower-level in Finance Team.",
+        "expected_output": "Allowed.",
+        "pass_criteria": "Permission result is allowed with same-org-unit explanation.",
     },
     {
         "id": "BC-05",
-        "scenario": "Mary may edit Peter inside Finance Team because Peter is lower level.",
-        "input": "Editor: Mary; Target: Peter",
-        "preconditions": "Mary is Finance Team lead; Peter is Finance Officer in Finance Team.",
-        "expected_output": "Allowed.",
-        "pass_criteria": "Permission result is allowed with a same-org-unit explanation.",
+        "scenario": "Acting assignment replaces official approver during valid dates.",
+        "input": "Requester: Peter; Action: Sick Leave; Date: 2027-06-15",
+        "preconditions": "Mary has valid acting assignment to Nina for sick_leave.",
+        "expected_output": "Nina approves instead of Mary.",
+        "pass_criteria": "Final chain shows acting overlay explanation and Nina approver.",
     },
     {
         "id": "BC-06",
-        "scenario": "Acting/delegation is not supported in this POC.",
-        "input": "Any acting or delegate request",
-        "preconditions": "POC scope excludes acting/delegation.",
-        "expected_output": "Feature is documented as unsupported/future enhancement.",
-        "pass_criteria": "No acting/delegation workflow is exposed by the POC.",
+        "scenario": "Peer coverage replaces official approver during valid dates.",
+        "input": "Requester: Peter; Action: Annual Leave; Date: 2027-08-15",
+        "preconditions": "Mary has valid peer coverage by Nina for annual_leave.",
+        "expected_output": "Nina then Fiona.",
+        "pass_criteria": "Coverage overlay is shown and audit log is written.",
+    },
+    {
+        "id": "BC-07",
+        "scenario": "Delegation replaces approver during valid dates.",
+        "input": "Requester: Peter; Action: Annual Leave; Date: 2027-09-15",
+        "preconditions": "Mary delegated annual_leave approval to Nina.",
+        "expected_output": "Nina then Fiona.",
+        "pass_criteria": "Delegation overlay is shown and audit log is written.",
+    },
+    {
+        "id": "BC-08",
+        "scenario": "Self-approval is prevented and redirected.",
+        "input": "Requester: Peter; Action: Sick Leave; Date: 2027-10-15",
+        "preconditions": "Acting assignment would otherwise route approval to Peter.",
+        "expected_output": "Fiona replaces self-approval.",
+        "pass_criteria": "Final chain contains no requester approval step and explains redirect.",
+    },
+    {
+        "id": "BC-09",
+        "scenario": "Handover overlap can require outgoing and incoming approvers.",
+        "input": "Requester: Peter; Action: Sick Leave; Date: 2027-11-15",
+        "preconditions": "Peter has both_required overlap from Mary to Nina.",
+        "expected_output": "Mary then Nina.",
+        "pass_criteria": "Two handover steps are generated with policy explanation.",
+    },
+    {
+        "id": "BC-10",
+        "scenario": "Cross-department project routing applies only to project-scoped actions.",
+        "input": "Requester: Peter; Action: Project Change Request; Project: UTP",
+        "preconditions": "Peter is assigned to UTP; Helen is project manager.",
+        "expected_output": "Helen approves.",
+        "pass_criteria": "Project overlay replaces official route only for project action.",
+    },
+    {
+        "id": "BC-11",
+        "scenario": "Annual Leave ignores project reporting overlay.",
+        "input": "Requester: Peter; Action: Annual Leave; Project: UTP",
+        "preconditions": "Annual Leave is not project-scoped.",
+        "expected_output": "Mary then Fiona.",
+        "pass_criteria": "Project manager is not used for HR action.",
+    },
+    {
+        "id": "BC-12",
+        "scenario": "Co-head either_one_approves policy is supported.",
+        "input": "Requester: Peter; Action: Finance Team Plan",
+        "preconditions": "Finance Team has co-heads Mary and Nina with either_one_approves policy.",
+        "expected_output": "Mary primary approver with Nina shown as alternate.",
+        "pass_criteria": "Chain explains co-head policy and lists alternate approver.",
+    },
+    {
+        "id": "BC-13",
+        "scenario": "Co-head both_required policy is supported.",
+        "input": "Requester: Peter; Action: Finance Team Plan",
+        "preconditions": "Same co-head group switched to both_required.",
+        "expected_output": "Mary then Nina.",
+        "pass_criteria": "Two co-head approval steps are generated.",
+    },
+    {
+        "id": "BC-14",
+        "scenario": "Invalid delegation to inactive user is rejected.",
+        "input": "Delegator: Mary; Delegate: inactive user",
+        "preconditions": "Applicable delegation exists but delegate is inactive.",
+        "expected_output": "Clear error.",
+        "pass_criteria": "Routing rejects inactive delegate.",
+    },
+    {
+        "id": "BC-15",
+        "scenario": "Self-delegation is rejected.",
+        "input": "Delegator: Mary; Delegate: Mary",
+        "preconditions": "Applicable delegation exists.",
+        "expected_output": "Clear error.",
+        "pass_criteria": "Routing rejects self-delegation.",
     },
 ]
+
+
+ADVANCED_SCENARIOS = [
+    {
+        "id": "official_route",
+        "title": "Official reporting line route",
+        "description": "Core route from department reporting line.",
+        "requester_name": "Peter",
+        "action_code": "annual_leave",
+    },
+    {
+        "id": "acting_route",
+        "title": "Acting route",
+        "description": "Mary is temporarily acted by Nina for sick leave.",
+        "requester_name": "Peter",
+        "action_code": "sick_leave",
+        "request_at": "2027-06-15T00:00:00+00:00",
+    },
+    {
+        "id": "peer_coverage_route",
+        "title": "Peer coverage route",
+        "description": "Mary is covered by Nina for annual leave.",
+        "requester_name": "Peter",
+        "action_code": "annual_leave",
+        "request_at": "2027-08-15T00:00:00+00:00",
+    },
+    {
+        "id": "delegation_route",
+        "title": "Delegation route",
+        "description": "Mary delegates annual leave approval to Nina.",
+        "requester_name": "Peter",
+        "action_code": "annual_leave",
+        "request_at": "2027-09-15T00:00:00+00:00",
+    },
+    {
+        "id": "handover_route",
+        "title": "Handover overlap route",
+        "description": "Outgoing and incoming approvers are both required.",
+        "requester_name": "Peter",
+        "action_code": "sick_leave",
+        "request_at": "2027-11-15T00:00:00+00:00",
+    },
+    {
+        "id": "project_route",
+        "title": "Cross-department project route",
+        "description": "Project-scoped action routes to cross-department project manager.",
+        "requester_name": "Peter",
+        "action_code": "project_change_request",
+        "project_code": "UTP",
+    },
+    {
+        "id": "co_head_route",
+        "title": "Co-head route",
+        "description": "Finance Team co-head policy is applied.",
+        "requester_name": "Peter",
+        "action_code": "finance_team_plan",
+    },
+    {
+        "id": "self_approval_route",
+        "title": "Self-approval blocked route",
+        "description": "Overlay would route approval to requester, so system redirects it.",
+        "requester_name": "Peter",
+        "action_code": "sick_leave",
+        "request_at": "2027-10-15T00:00:00+00:00",
+    },
+]
+
+
+def _parse_request_at(raw_value: str | None) -> datetime | None:
+    if not raw_value:
+        return None
+    return datetime.fromisoformat(raw_value)
 
 
 def build_bootstrap_payload() -> dict[str, Any]:
     with _seeded_session() as (_, session, data):
         users = [
             _serialize_user(user)
-            for key, user in data.items()
+            for _, user in data.items()
             if hasattr(user, "email")
         ]
         users.sort(key=lambda item: (item["department_code"], item["level_rank"], item["name"]))
@@ -92,13 +241,23 @@ def build_bootstrap_payload() -> dict[str, Any]:
                     "code": data["training_request"].code,
                     "name": data["training_request"].name,
                 },
+                {
+                    "code": data["project_change"].code,
+                    "name": data["project_change"].name,
+                },
+                {
+                    "code": data["finance_team_plan"].code,
+                    "name": data["finance_team_plan"].name,
+                },
             ],
             "users": users,
             "business_cases": BUSINESS_CASES,
+            "advanced_scenarios": ADVANCED_SCENARIOS,
             "notes": [
                 "Reporting lines drive both approval routing and org chart display.",
-                "Each staff member can have only one active primary manager.",
-                "Acting/delegation is intentionally out of scope for this POC.",
+                "Each staff member can have only one active official primary manager.",
+                "Advanced cases are modeled as temporary overlays, not extra primary managers.",
+                "Project overlays apply only to project-scoped actions.",
             ],
             "org_charts": {
                 department["code"]: get_department_org_chart(session, department["code"])
@@ -110,27 +269,71 @@ def build_bootstrap_payload() -> dict[str, Any]:
         }
 
 
-def simulate_action_request(requester_id: int, action_code: str) -> dict[str, Any]:
+def simulate_action_request(
+    requester_id: int,
+    action_code: str,
+    request_at: str | None = None,
+    project_code: str | None = None,
+) -> dict[str, Any]:
     with _seeded_session() as (_, session, _):
         try:
-            request = submit_request(session, requester_id, action_code)
-            session.refresh(request)
-            return {
-                "status": "success",
-                "request_id": request.id,
-                "requester": request.requester.name,
-                "action": request.action.name,
-                "steps": [
-                    {
-                        "order": step.step_order,
-                        "approver": step.approver.name,
-                        "is_fallback": step.is_fallback,
-                    }
-                    for step in request.steps
-                ],
-            }
+            parsed_request_at = _parse_request_at(request_at)
+            chain = build_approval_chain(
+                session,
+                requester_id,
+                action_code,
+                request_at=parsed_request_at,
+                project_code=project_code,
+            )
+            request = submit_request(
+                session,
+                requester_id,
+                action_code,
+                request_at=parsed_request_at,
+                project_code=project_code,
+            )
+            response = approval_chain_to_dict(chain)
+            response.update(
+                {
+                    "status": "success",
+                    "request_id": request.id,
+                    "request_at": request_at,
+                    "project_code": project_code,
+                }
+            )
+            return response
         except RoutingError as exc:
             return {"status": "error", "error": str(exc)}
+
+
+def simulate_advanced_scenario(scenario_id: str) -> dict[str, Any]:
+    bootstrap = build_bootstrap_payload()
+    scenario = next(
+        (
+            item
+            for item in bootstrap["advanced_scenarios"]
+            if item["id"] == scenario_id
+        ),
+        None,
+    )
+    if scenario is None:
+        return {"status": "error", "error": f"Scenario {scenario_id!r} not found."}
+
+    requester = next(
+        user for user in bootstrap["users"] if user["name"] == scenario["requester_name"]
+    )
+    result = simulate_action_request(
+        requester_id=requester["id"],
+        action_code=scenario["action_code"],
+        request_at=scenario.get("request_at"),
+        project_code=scenario.get("project_code"),
+    )
+    result["scenario"] = {
+        "id": scenario["id"],
+        "title": scenario["title"],
+        "description": scenario["description"],
+    }
+    return result
 
 
 def simulate_team_lead_permission(editor_id: int, target_user_id: int) -> dict[str, Any]:
@@ -216,8 +419,15 @@ class ManualTestRequestHandler(BaseHTTPRequestHandler):
                 simulate_action_request(
                     requester_id=int(payload["requester_id"]),
                     action_code=str(payload["action_code"]),
+                    request_at=payload.get("request_at"),
+                    project_code=payload.get("project_code"),
                 )
             )
+            return
+
+        if self.path == "/api/simulate-scenario":
+            payload = self._read_json_body()
+            self._send_json(simulate_advanced_scenario(str(payload["scenario_id"])))
             return
 
         if self.path == "/api/team-lead-permission":
@@ -261,12 +471,16 @@ class ManualTestRequestHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
-def run_server(host: str = "127.0.0.1", port: int = 8000) -> None:
+def run(host: str = "127.0.0.1", port: int = 8000) -> None:
     server = ThreadingHTTPServer((host, port), ManualTestRequestHandler)
-    print(f"Manual test frontend running at http://{host}:{port}")
-    print("Press Ctrl+C to stop.")
-    server.serve_forever()
+    print(f"Manual test app running at http://{host}:{port}")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:  # pragma: no cover
+        pass
+    finally:
+        server.server_close()
 
 
-if __name__ == "__main__":
-    run_server()
+if __name__ == "__main__":  # pragma: no cover
+    run()
