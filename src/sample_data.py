@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -9,14 +10,26 @@ from sqlalchemy.orm import Session
 from src.models import (
     Action,
     ActionRoutingRule,
+    ActingAssignment,
+    CoHeadAssignment,
+    CoverageAssignment,
+    DelegationAssignment,
     Department,
     DepartmentFallbackRule,
     DeptLevel,
+    HandoverOverlap,
     OrgUnit,
     OrgUnitMembership,
+    Project,
+    ProjectAssignment,
+    ProjectReportingLine,
     ReportingLine,
     User,
 )
+
+
+def _dt(year: int, month: int, day: int) -> datetime:
+    return datetime(year, month, day, tzinfo=timezone.utc)
 
 
 def seed_sample_data(session: Session) -> dict[str, Any]:
@@ -175,7 +188,24 @@ def seed_sample_data(session: Session) -> dict[str, Any]:
     annual_leave = Action(name="Annual Leave", code="annual_leave")
     sick_leave = Action(name="Sick Leave", code="sick_leave")
     training_request = Action(name="Training Request", code="training_request")
-    session.add_all([annual_leave, sick_leave, training_request])
+    project_change = Action(
+        name="Project Change Request",
+        code="project_change_request",
+        is_project_scoped=True,
+    )
+    finance_team_plan = Action(
+        name="Finance Team Plan",
+        code="finance_team_plan",
+    )
+    session.add_all(
+        [
+            annual_leave,
+            sick_leave,
+            training_request,
+            project_change,
+            finance_team_plan,
+        ]
+    )
     session.flush()
 
     session.add_all(
@@ -203,6 +233,24 @@ def seed_sample_data(session: Session) -> dict[str, Any]:
                 dept_id=hr.id,
                 requires_primary=True,
                 requires_second_level=True,
+            ),
+            ActionRoutingRule(
+                action_id=project_change.id,
+                dept_id=finance.id,
+                requires_primary=True,
+                requires_second_level=False,
+            ),
+            ActionRoutingRule(
+                action_id=project_change.id,
+                dept_id=hr.id,
+                requires_primary=True,
+                requires_second_level=False,
+            ),
+            ActionRoutingRule(
+                action_id=finance_team_plan.id,
+                dept_id=finance.id,
+                requires_primary=True,
+                requires_second_level=False,
             ),
         ]
     )
@@ -222,6 +270,112 @@ def seed_sample_data(session: Session) -> dict[str, Any]:
             ),
         ]
     )
+    session.flush()
+
+    project_transform = Project(
+        name="University Transformation Programme",
+        code="UTP",
+        home_dept_id=finance.id,
+    )
+    session.add(project_transform)
+    session.flush()
+
+    session.add_all(
+        [
+            ProjectAssignment(
+                project_id=project_transform.id,
+                user_id=peter.id,
+                role_name="Finance representative",
+            ),
+            ProjectAssignment(
+                project_id=project_transform.id,
+                user_id=olivia.id,
+                role_name="HR representative",
+            ),
+            ProjectReportingLine(
+                project_id=project_transform.id,
+                user_id=peter.id,
+                project_manager_id=helen.id,
+                action_id=project_change.id,
+            ),
+            ProjectReportingLine(
+                project_id=project_transform.id,
+                user_id=olivia.id,
+                project_manager_id=mary.id,
+                action_id=project_change.id,
+            ),
+        ]
+    )
+
+    session.add_all(
+        [
+            ActingAssignment(
+                principal_user_id=mary.id,
+                acting_user_id=nina.id,
+                dept_id=finance.id,
+                org_unit_id=finance_team.id,
+                action_id=sick_leave.id,
+                effective_from=_dt(2027, 6, 1),
+                effective_to=_dt(2027, 6, 30),
+            ),
+            ActingAssignment(
+                principal_user_id=mary.id,
+                acting_user_id=peter.id,
+                dept_id=finance.id,
+                org_unit_id=finance_team.id,
+                action_id=sick_leave.id,
+                effective_from=_dt(2027, 10, 1),
+                effective_to=_dt(2027, 10, 31),
+            ),
+            CoverageAssignment(
+                covered_user_id=mary.id,
+                coverage_user_id=nina.id,
+                dept_id=finance.id,
+                org_unit_id=finance_team.id,
+                action_id=annual_leave.id,
+                effective_from=_dt(2027, 8, 1),
+                effective_to=_dt(2027, 8, 31),
+            ),
+            DelegationAssignment(
+                delegator_user_id=mary.id,
+                delegate_user_id=nina.id,
+                dept_id=finance.id,
+                org_unit_id=finance_team.id,
+                action_id=annual_leave.id,
+                effective_from=_dt(2027, 9, 1),
+                effective_to=_dt(2027, 9, 30),
+            ),
+            HandoverOverlap(
+                requester_user_id=peter.id,
+                old_approver_id=mary.id,
+                new_approver_id=nina.id,
+                dept_id=finance.id,
+                org_unit_id=finance_team.id,
+                action_id=sick_leave.id,
+                effective_from=_dt(2027, 11, 1),
+                effective_to=_dt(2027, 11, 30),
+                policy="both_required",
+            ),
+            CoHeadAssignment(
+                user_id=mary.id,
+                dept_id=finance.id,
+                org_unit_id=finance_team.id,
+                action_id=finance_team_plan.id,
+                policy="either_one_approves",
+                sequence_order=1,
+                is_primary=True,
+            ),
+            CoHeadAssignment(
+                user_id=nina.id,
+                dept_id=finance.id,
+                org_unit_id=finance_team.id,
+                action_id=finance_team_plan.id,
+                policy="either_one_approves",
+                sequence_order=2,
+            ),
+        ]
+    )
+
     session.commit()
 
     return {
@@ -247,4 +401,7 @@ def seed_sample_data(session: Session) -> dict[str, Any]:
         "annual_leave": annual_leave,
         "sick_leave": sick_leave,
         "training_request": training_request,
+        "project_change": project_change,
+        "finance_team_plan": finance_team_plan,
+        "project_transform": project_transform,
     }

@@ -76,13 +76,15 @@ label {
 }
 
 select,
+input,
 button {
   border-radius: 12px;
   font: inherit;
   padding: 0.8rem 1rem;
 }
 
-select {
+select,
+input {
   background: white;
   border: 1px solid #cbd7e6;
 }
@@ -111,6 +113,7 @@ pre {
 }
 
 .pill-grid,
+.scenario-grid,
 .org-unit-grid {
   display: grid;
   gap: 0.85rem;

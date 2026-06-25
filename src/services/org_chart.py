@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from src.models import Department, DepartmentFallbackRule, OrgUnitMembership, User
+from src.models import (
+    CoHeadAssignment,
+    Department,
+    DepartmentFallbackRule,
+    OrgUnitMembership,
+    User,
+)
 
 
 def get_department_org_chart(session: Session, department_code: str) -> dict[str, object]:
@@ -26,6 +32,11 @@ def get_department_org_chart(session: Session, department_code: str) -> dict[str
         .all()
     )
     team_lead_ids = {membership.user_id for membership in lead_memberships}
+    co_head_assignments = (
+        session.query(CoHeadAssignment)
+        .filter(CoHeadAssignment.is_active.is_(True))
+        .all()
+    )
 
     fallback_rule = (
         session.query(DepartmentFallbackRule)
@@ -60,6 +71,27 @@ def get_department_org_chart(session: Session, department_code: str) -> dict[str
                 "id": org_unit.id,
                 "code": org_unit.code,
                 "name": org_unit.name,
+                "co_heads": [
+                    {
+                        "name": assignment.user.name,
+                        "policy": assignment.policy,
+                        "is_primary": assignment.is_primary,
+                    }
+                    for assignment in sorted(
+                        [
+                            assignment
+                            for assignment in co_head_assignments
+                            if assignment.org_unit_id == org_unit.id
+                            and assignment.user is not None
+                            and assignment.user.is_active
+                        ],
+                        key=lambda item: (
+                            0 if item.is_primary else 1,
+                            item.sequence_order,
+                            item.user.name,
+                        ),
+                    )
+                ],
                 "team_leads": [
                     _serialize_user(membership.user, True)
                     for membership in ordered_memberships
