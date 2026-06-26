@@ -11,6 +11,9 @@ University reporting-line system proof-of-concept built with Python, SQLAlchemy,
 - Department-specific action routing for Annual Leave and Sick Leave
 - Department-level fallback approvers for top-level users
 - Org chart display with team-lead and co-head indicators
+- **Editable visual reporting-line diagram** with SVG nodes and edit panel
+- **Seed data editor** for users, levels, routing rules, fallback approvers, and reporting lines
+- **Persistent POC state** stored in SQLite (edits survive across simulations)
 - Advanced overlay routing for:
   - acting
   - peer coverage
@@ -34,24 +37,60 @@ python -m src.manual_test_app
 
 Then open <http://127.0.0.1:8000>.
 
+## Corrected level mapping
+
+| Level Rank | Role |
+|---|---|
+| **4** | **Director** (Finance Director, HR Director) |
+| **5** | **Senior Manager** / HR Manager |
+| **9** | **Officer** (Finance Officer, HR Officer) |
+
 ## Frontend POC
 
-The browser UI lets you:
+The browser UI is organized into four tabs:
 
-- inspect seed users for Finance and HR
-- switch between department org charts
-- simulate action submission and see the generated approval chain
-- run predefined advanced reporting-line scenarios
-- simulate team-lead edit permission decisions
+### Overview tab
+- Inspect seed users showing level, rank, org-unit, and team-lead status
+- Switch between department org charts (card-based, read-only)
+- Scenario summary notes
+
+### Diagram Editor tab
+- **Visual SVG diagram** of the selected department's reporting hierarchy
+- Users are displayed as nodes positioned by level (L4 at top, L9 at bottom)
+- Solid lines show official primary reporting relationships
+- Team leads are marked with ★; top-level (Director) nodes are dark-coloured
+- **Click any node** to open the Edit Panel:
+  - Edit name, email, level, org-unit, team-lead flag, and primary manager
+  - Saves are immediately reflected in the diagram and simulation
+  - Circular reporting lines are detected and blocked with a clear error
+
+### Seed Data Editor tab
+- Edit users, levels, routing rules, fallback approvers, and reporting lines
+  inline in table form
+- Add new users and reporting lines
+- **Reset to default seed data** button restores original sample data
+- Changes are immediately available in the Simulation tab
+
+### Simulation tab
+- Submit action simulations (requester, action, date, optional project)
+- Team-lead edit permission check
+- One-click advanced scenario simulations:
+  - official route, acting, peer coverage, delegation, handover overlap,
+    cross-department project, co-head, and self-approval blocked
+
+## Persistent state
+
+POC state is stored in `/tmp/reporting_line_manual_test.db`.
+Set the `REPORTING_LINE_DB` environment variable to use a different path.
 
 ## Key sample scenario
 
-- **Mary** is a **Senior Manager** in **Finance**
-- Mary is also the **team lead of Finance Team**
-- Mary can edit lower-level users in Finance Team
-- Mary cannot edit herself, same-level users, protected top-level users, or users outside Finance Team
-- Finance Team also has a co-head approval setup with Mary as primary co-head and
-  Nina as secondary co-head for Finance Team Plan requests
+- **Fiona** is the **Finance Director** (Level 4, top level)
+- **Mary** is a **Senior Manager** (Level 5) in Finance and team lead of Finance Team
+- **Peter** is a **Finance Officer** (Level 9) reporting to Mary
+- Mary can edit lower-level users (Level 9+) in Finance Team
+- Mary cannot edit herself, same-level users, top-level users, or users outside Finance Team
+- Finance Team has a co-head setup with Mary as primary and Nina as secondary
 - Peter participates in the cross-department **UTP** project, where **Helen**
   can become the project approver for project-scoped actions
 
@@ -60,6 +99,10 @@ The browser UI lets you:
 See [docs/WORKFLOW.md](docs/WORKFLOW.md) for:
 
 - schema summary
+- corrected level mapping (Director=4, Senior Manager=5, Officer=9)
 - layered routing business logic summary
-- full business/test case table
+- how to edit the visual diagram
+- how to edit seed data from the POC page
+- how changes affect scenario simulation
+- full business/test case table (BC-01 through BC-30)
 - local run instructions

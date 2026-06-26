@@ -12,107 +12,372 @@
         <p class="eyebrow">University Reporting-Line System</p>
         <h1>Department + Org-Unit Reporting POC</h1>
         <p>
-          Explore the Finance and HR seed data, view department org charts,
+          Explore the Finance and HR seed data, view and <strong>edit</strong> department org charts,
           simulate action routing, and test team-lead edit permission rules.
+          Director = Level 4 · Senior Manager = Level 5 · Officer = Level 9.
         </p>
       </div>
     </header>
 
+    <!-- Tab navigation -->
+    <nav class="tab-bar">
+      <button class="tab-btn active" data-tab="overview">Overview</button>
+      <button class="tab-btn" data-tab="diagram">Diagram Editor</button>
+      <button class="tab-btn" data-tab="seed-editor">Seed Data Editor</button>
+      <button class="tab-btn" data-tab="simulation">Simulation</button>
+      <button class="tab-btn" data-tab="cases">Business Cases</button>
+    </nav>
+
     <main class="layout">
-      <section class="card">
-        <h2>Scenario Summary</h2>
-        <ul id="notes"></ul>
-      </section>
 
-      <section class="card">
-        <h2>Seed Data</h2>
-        <div id="seed-users" class="pill-grid"></div>
-      </section>
+      <!-- ===== OVERVIEW TAB ===== -->
+      <div id="tab-overview" class="tab-content active">
+        <section class="card">
+          <h2>Scenario Summary</h2>
+          <ul id="notes"></ul>
+        </section>
 
-      <section class="card">
-        <div class="section-header">
-          <h2>Department Org Chart</h2>
-          <label>
-            Department
-            <select id="department-select"></select>
-          </label>
-        </div>
-        <div id="org-chart"></div>
-      </section>
+        <section class="card">
+          <h2>Seed Users</h2>
+          <div id="seed-users" class="pill-grid"></div>
+        </section>
 
-      <section class="card two-column">
-        <div>
-          <h2>Submit Action Simulation</h2>
-          <form id="routing-form" class="stack">
+        <section class="card">
+          <div class="section-header">
+            <h2>Department Org Chart (read-only)</h2>
             <label>
-              Requester
-              <select id="requester-select"></select>
+              Department
+              <select id="department-select-overview"></select>
             </label>
-            <label>
-              Action
-              <select id="action-select"></select>
-            </label>
-            <label>
-              Request date (optional)
-              <input id="request-at-input" type="datetime-local" />
-            </label>
-            <label>
-              Project code (optional)
-              <input id="project-code-input" type="text" placeholder="UTP" />
-            </label>
-            <button type="submit">Generate approval chain</button>
-          </form>
-          <pre id="routing-output">Choose a requester and action.</pre>
-        </div>
+          </div>
+          <div id="org-chart"></div>
+        </section>
+      </div>
 
-        <div>
-          <h2>Team-Lead Permission Simulation</h2>
-          <form id="permission-form" class="stack">
-            <label>
-              Editor
-              <select id="editor-select"></select>
+      <!-- ===== DIAGRAM EDITOR TAB ===== -->
+      <div id="tab-diagram" class="tab-content hidden">
+        <section class="card">
+          <div class="diagram-header">
+            <h2>Reporting-Line Diagram Editor</h2>
+            <p class="hint">
+              Click any node to open the edit panel. Edit name, level, department,
+              org-unit, team-lead flag, or reporting manager. Save to persist changes
+              and refresh the diagram. Circular reporting lines are detected and blocked.
+            </p>
+            <label class="inline-label">
+              Department
+              <select id="department-select-diagram"></select>
             </label>
-            <label>
-              Target user
-              <select id="target-select"></select>
-            </label>
-            <button type="submit">Check permission</button>
-          </form>
-          <pre id="permission-output">Choose an editor and target user.</pre>
-        </div>
-      </section>
+          </div>
+          <div class="diagram-workspace">
+            <div class="diagram-container">
+              <svg id="diagram-svg" width="100%" height="540"></svg>
+            </div>
+            <!-- Edit Panel -->
+            <aside id="edit-panel" class="edit-panel hidden">
+              <div class="edit-panel-header">
+                <h3 id="edit-panel-title">Edit Node</h3>
+                <button type="button" id="edit-panel-close" class="btn-icon">✕</button>
+              </div>
+              <form id="edit-node-form" class="stack">
+                <input type="hidden" id="edit-user-id" />
+                <label>
+                  Name
+                  <input type="text" id="edit-name" />
+                </label>
+                <label>
+                  Email
+                  <input type="email" id="edit-email" />
+                </label>
+                <label>
+                  Level
+                  <select id="edit-level"></select>
+                </label>
+                <label>
+                  Org Unit / Team
+                  <select id="edit-org-unit">
+                    <option value="">— none —</option>
+                  </select>
+                </label>
+                <label class="checkbox-label">
+                  <input type="checkbox" id="edit-team-lead" />
+                  Team Lead
+                </label>
+                <label>
+                  Primary Manager (reporting line)
+                  <select id="edit-manager">
+                    <option value="">— none / top-level —</option>
+                  </select>
+                </label>
+                <div id="edit-error" class="error-box hidden"></div>
+                <div class="button-row">
+                  <button type="submit" id="edit-save-btn">Save changes</button>
+                  <button type="button" id="edit-cancel-btn" class="btn-secondary">Cancel</button>
+                </div>
+              </form>
+            </aside>
+          </div>
+        </section>
+      </div>
 
-      <section class="card">
-        <h2>Advanced Scenario Simulations</h2>
-        <p>
-          Run first-class simulations for acting, peer coverage, delegation,
-          handover overlap, cross-department projects, co-heads, and
-          self-approval prevention.
-        </p>
-        <div id="scenario-list" class="scenario-grid"></div>
-        <pre id="scenario-output">Choose a scenario.</pre>
-      </section>
+      <!-- ===== SEED DATA EDITOR TAB ===== -->
+      <div id="tab-seed-editor" class="tab-content hidden">
+        <section class="card">
+          <div class="section-header">
+            <h2>Seed Data Editor</h2>
+            <button type="button" id="reset-seed-btn" class="btn-danger">Reset to default seed data</button>
+          </div>
+          <p class="hint">
+            Edit users, levels, routing rules, fallback approvers, and reporting lines.
+            Changes persist across simulations until you reset.
+          </p>
 
-      <section class="card">
-        <h2>Business Cases Covered</h2>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Scenario</th>
-                <th>Input</th>
-                <th>Preconditions</th>
-                <th>Expected Output</th>
-                <th>Pass Criteria</th>
-              </tr>
-            </thead>
-            <tbody id="business-case-body"></tbody>
-          </table>
-        </div>
-      </section>
+          <!-- Seed editor sub-tabs -->
+          <div class="seed-tabs">
+            <button class="seed-tab-btn active" data-seed="users">Users</button>
+            <button class="seed-tab-btn" data-seed="dept_levels">Levels</button>
+            <button class="seed-tab-btn" data-seed="reporting_lines">Reporting Lines</button>
+            <button class="seed-tab-btn" data-seed="routing_rules">Routing Rules</button>
+            <button class="seed-tab-btn" data-seed="fallback_rules">Fallback Approvers</button>
+            <button class="seed-tab-btn" data-seed="actions">Actions</button>
+            <button class="seed-tab-btn" data-seed="departments">Departments</button>
+            <button class="seed-tab-btn" data-seed="org_units">Org Units</button>
+          </div>
+
+          <!-- User seed table -->
+          <div id="seed-tab-users" class="seed-tab-content">
+            <div class="table-toolbar">
+              <h3>Users</h3>
+              <button type="button" id="add-user-btn">+ Add User</button>
+            </div>
+            <div id="add-user-form" class="inline-form hidden">
+              <h4>New User</h4>
+              <div class="form-row">
+                <label>Name <input type="text" id="new-user-name" /></label>
+                <label>Email <input type="email" id="new-user-email" /></label>
+                <label>Level
+                  <select id="new-user-level"></select>
+                </label>
+                <button type="button" id="save-new-user-btn">Create</button>
+                <button type="button" id="cancel-new-user-btn" class="btn-secondary">Cancel</button>
+              </div>
+              <div id="new-user-error" class="error-box hidden"></div>
+            </div>
+            <div class="table-wrap">
+              <table id="users-table">
+                <thead>
+                  <tr>
+                    <th>ID</th><th>Name</th><th>Email</th><th>Department</th>
+                    <th>Level</th><th>Rank</th><th>Active</th><th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="users-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Dept levels table -->
+          <div id="seed-tab-dept_levels" class="seed-tab-content hidden">
+            <h3>Department Levels</h3>
+            <div class="table-wrap">
+              <table id="levels-table">
+                <thead>
+                  <tr>
+                    <th>ID</th><th>Department</th><th>Rank</th><th>Level Name</th><th>Top Level</th><th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="levels-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Reporting lines table -->
+          <div id="seed-tab-reporting_lines" class="seed-tab-content hidden">
+            <div class="table-toolbar">
+              <h3>Reporting Lines (Active Primary)</h3>
+              <button type="button" id="add-rl-btn">+ Add / Change Manager</button>
+            </div>
+            <div id="add-rl-form" class="inline-form hidden">
+              <h4>Set Primary Manager</h4>
+              <div class="form-row">
+                <label>Staff Member
+                  <select id="new-rl-user"></select>
+                </label>
+                <label>New Manager
+                  <select id="new-rl-manager"></select>
+                </label>
+                <button type="button" id="save-new-rl-btn">Set Manager</button>
+                <button type="button" id="cancel-new-rl-btn" class="btn-secondary">Cancel</button>
+              </div>
+              <div id="new-rl-error" class="error-box hidden"></div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th><th>Staff Member</th><th>Manager</th><th>Department</th><th>Primary</th><th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="rl-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Routing rules table -->
+          <div id="seed-tab-routing_rules" class="seed-tab-content hidden">
+            <h3>Action Routing Rules</h3>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th><th>Action</th><th>Department</th>
+                    <th>Requires Primary</th><th>Requires 2nd Level</th><th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="routing-rules-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Fallback rules table -->
+          <div id="seed-tab-fallback_rules" class="seed-tab-content hidden">
+            <h3>Department Fallback Approvers</h3>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th><th>Department</th><th>Fallback Approver</th><th>Label</th><th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="fallback-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Actions table (read-only overview) -->
+          <div id="seed-tab-actions" class="seed-tab-content hidden">
+            <h3>Actions</h3>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>ID</th><th>Name</th><th>Code</th><th>Project Scoped</th></tr>
+                </thead>
+                <tbody id="actions-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Departments table (read-only overview) -->
+          <div id="seed-tab-departments" class="seed-tab-content hidden">
+            <h3>Departments</h3>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>ID</th><th>Name</th><th>Code</th></tr>
+                </thead>
+                <tbody id="departments-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Org units table (read-only overview) -->
+          <div id="seed-tab-org_units" class="seed-tab-content hidden">
+            <h3>Org Units / Teams</h3>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>ID</th><th>Department</th><th>Name</th><th>Code</th></tr>
+                </thead>
+                <tbody id="org-units-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+        </section>
+      </div>
+
+      <!-- ===== SIMULATION TAB ===== -->
+      <div id="tab-simulation" class="tab-content hidden">
+        <section class="card two-column">
+          <div>
+            <h2>Submit Action Simulation</h2>
+            <form id="routing-form" class="stack">
+              <label>
+                Requester
+                <select id="requester-select"></select>
+              </label>
+              <label>
+                Action
+                <select id="action-select"></select>
+              </label>
+              <label>
+                Request date (optional)
+                <input id="request-at-input" type="datetime-local" />
+              </label>
+              <label>
+                Project code (optional)
+                <input id="project-code-input" type="text" placeholder="UTP" />
+              </label>
+              <button type="submit">Generate approval chain</button>
+            </form>
+            <pre id="routing-output">Choose a requester and action.</pre>
+          </div>
+
+          <div>
+            <h2>Team-Lead Permission Simulation</h2>
+            <form id="permission-form" class="stack">
+              <label>
+                Editor
+                <select id="editor-select"></select>
+              </label>
+              <label>
+                Target user
+                <select id="target-select"></select>
+              </label>
+              <button type="submit">Check permission</button>
+            </form>
+            <pre id="permission-output">Choose an editor and target user.</pre>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Advanced Scenario Simulations</h2>
+          <p>
+            Run first-class simulations for acting, peer coverage, delegation,
+            handover overlap, cross-department projects, co-heads, and
+            self-approval prevention.
+            Scenarios use the current edited state — changes made in the Diagram Editor
+            or Seed Data Editor are reflected here immediately.
+          </p>
+          <div id="scenario-list" class="scenario-grid"></div>
+          <pre id="scenario-output">Choose a scenario.</pre>
+        </section>
+      </div>
+
+      <!-- ===== BUSINESS CASES TAB ===== -->
+      <div id="tab-cases" class="tab-content hidden">
+        <section class="card">
+          <h2>Business Cases Covered</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Scenario</th>
+                  <th>Input</th>
+                  <th>Preconditions</th>
+                  <th>Expected Output</th>
+                  <th>Pass Criteria</th>
+                </tr>
+              </thead>
+              <tbody id="business-case-body"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
     </main>
 
     <script src="/app.js"></script>
   </body>
-  </html>
+</html>

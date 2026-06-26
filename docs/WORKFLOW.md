@@ -73,6 +73,17 @@ The schema includes:
 
 ## Seed data
 
+### Corrected global level mapping
+
+| Level Rank | Role/Position example |
+|---|---|
+| 4 | Director (Finance Director, HR Director) |
+| 5 | Senior Manager, HR Manager |
+| 9 | Officer (Finance Officer, HR Officer) |
+
+This matches the university global hierarchy where Level 4 is Director,
+Level 5 is Senior Manager, and Level 9 is Officer.
+
 The sample data includes at least the following departments:
 
 - **Finance**
@@ -80,17 +91,17 @@ The sample data includes at least the following departments:
 
 Example Finance scenario:
 
-- Fiona — Finance Director (top level)
-- Mary — Senior Manager and Finance Team lead
-- Nina — Senior Manager and secondary Finance co-head
-- Peter — Finance Officer
-- Quinn — Payroll Team Finance Officer
+- Fiona — Finance Director (Level 4, top level)
+- Mary — Senior Manager (Level 5) and Finance Team lead
+- Nina — Senior Manager (Level 5) and secondary Finance co-head
+- Peter — Finance Officer (Level 9)
+- Quinn — Payroll Team Finance Officer (Level 9)
 
 Example HR scenario:
 
-- Henry — HR Director (top level)
-- Helen — HR Manager and HR Advisory team lead
-- Olivia — HR Officer
+- Henry — HR Director (Level 4, top level)
+- Helen — HR Manager (Level 5) and HR Advisory team lead
+- Olivia — HR Officer (Level 9)
 
 ## Business logic summary
 
@@ -156,6 +167,65 @@ python -m src.manual_test_app
 
 Open <http://127.0.0.1:8000>.
 
+The POC UI state persists in `/tmp/reporting_line_manual_test.db` (SQLite).
+Set `REPORTING_LINE_DB=/path/to/file.db` to use a different location.
+Use the **Reset to default seed data** button in the Seed Data Editor tab to
+restore the original sample data at any time.
+
+## Editing the visual diagram
+
+1. Open <http://127.0.0.1:8000> and click the **Diagram Editor** tab.
+2. Select a department from the dropdown (Finance or HR).
+3. The layered SVG diagram shows all users as nodes, with:
+   - solid lines representing official primary reporting relationships
+   - level numbers on each node (`L4` = Director, `L5` = Senior Manager, `L9` = Officer)
+   - ★ marker next to team leads
+   - dark-coloured nodes for top-level (Director) users
+4. **Click any node** to open the edit panel on the right.
+5. Edit any of the following fields:
+   - **Name** — user's display name
+   - **Email** — user's email address
+   - **Level** — dropdown of all available department levels
+   - **Org Unit / Team** — the org-unit the user belongs to
+   - **Team Lead** — toggle the team lead flag on/off
+   - **Primary Manager** — change the official reporting-to manager
+6. Click **Save changes**.
+   - If a circular reporting line would result, an error is shown and the
+     change is not saved.
+   - On success the diagram and simulation dropdowns refresh immediately.
+7. After saving, switch to the **Simulation** tab and run a scenario to see
+   the updated approval chain.
+
+## Editing seed data
+
+1. Click the **Seed Data Editor** tab.
+2. Select a sub-tab: Users, Levels, Reporting Lines, Routing Rules, Fallback
+   Approvers, Actions, Departments, or Org Units.
+3. Edit values inline and click **Save** on the row.
+4. For users and reporting lines you can also add new records using the
+   **+ Add** button above each table.
+5. Click **Reset to default seed data** at the top to restore original values.
+
+### Entities editable from the UI
+
+| Entity | Editable fields |
+|---|---|
+| Users | name, email, level, active |
+| Department Levels | rank, name, top-level flag |
+| Reporting Lines | add or remove active primary manager relationships |
+| Routing Rules | requires_primary, requires_second_level per action/dept |
+| Fallback Approvers | fallback user and label per department |
+
+### How seed data edits affect simulation
+
+After any edit, the **Simulation** tab and **Advanced Scenario Simulations**
+automatically use the updated state.  Example flow:
+
+1. In **Seed Data Editor → Reporting Lines**, change Peter's manager from
+   Mary to Nina.
+2. Switch to **Simulation**, select Peter as requester and Annual Leave.
+3. The chain now shows Nina → Fiona instead of Mary → Fiona.
+
 ## Full business/test case table
 
 | Business Case ID | Scenario | Input | Preconditions | Expected Output | Pass Criteria |
@@ -184,3 +254,9 @@ Open <http://127.0.0.1:8000>.
 | BC-22 | Circular reporting chain | Requester Peter, action `annual_leave` | Extra line Fiona → Peter creates a cycle | Error for circular reporting | API/service raises clear cycle error |
 | BC-23 | Inactive manager/user | Requester Peter or inactive requester Peter, action `annual_leave` | Mary is inactive or Peter is inactive | Error for inactive manager/requester | API/service raises clear inactive-user error |
 | BC-24 | Multiple active primary managers | Requester Peter, action `annual_leave` | Peter has two active primary reporting lines | Error for multiple active primary managers | API/service raises explicit single-primary-manager error |
+| BC-25 | Diagram node edit updates level and refreshes chart | Edit Peter's level to Senior Manager (Level 5) | POC state is editable via diagram UI | Peter's node shows Level 5 | PUT `/api/users/{id}` persists change; GET `/api/org-chart` reflects update |
+| BC-26 | Diagram edge edit updates reporting line | Change Peter's manager from Mary to Nina | POC state is editable via diagram UI | Annual Leave routes Peter→Nina→Fiona | POST `/api/reporting-lines` persists change; routing reflects new manager |
+| BC-27 | Circular reporting line edit is blocked | Attempt to set Fiona's manager to Peter | Peter→Mary→Fiona cycle would result | Validation error shown in edit panel | POST `/api/reporting-lines` returns 400 with clear error |
+| BC-28 | Seed data edit changes available users in scenario builder | Add new user via seed data editor | POC seed data is editable | New user appears in requester dropdown | POST `/api/users` creates user; bootstrap returns updated list |
+| BC-29 | Corrected default levels are displayed | Load the POC page | Default seed data is loaded | Director shown as Level 4, Senior Manager as Level 5, Officer as Level 9 | Seed user pills and org chart nodes show correct level labels and ranks |
+| BC-30 | Scenario builder uses updated data after edit | Change Peter's manager; run Annual Leave | Diagram edit has been saved | Approval chain updated to use new manager | Scenario builder reflects current DB state, not snapshot at page load |
