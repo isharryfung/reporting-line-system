@@ -38,47 +38,145 @@
           </label>
         </div>
         <div id="org-chart"></div>
+        <div id="org-diagram" class="diagram-shell"></div>
       </section>
 
       <section class="card two-column">
         <div>
-          <h2>Submit Action Simulation</h2>
+          <h2>Scenario Builder</h2>
           <form id="routing-form" class="stack">
             <label>
               Requester
               <select id="requester-select"></select>
             </label>
             <label>
-              Action
+              Action type
               <select id="action-select"></select>
             </label>
             <label>
-              Request date (optional)
+              Department
+              <select id="scenario-department-select"></select>
+            </label>
+            <label>
+              Org-unit / team
+              <select id="scenario-org-unit-select"></select>
+            </label>
+            <label>
+              Position / level
+              <select id="scenario-level-select"></select>
+            </label>
+            <label>
+              Approval level/rule
+              <select id="approval-level-select">
+                <option value="">Use configured routing rule</option>
+                <option value="first_level">1st Level</option>
+                <option value="second_level">2nd Level</option>
+              </select>
+            </label>
+            <label>
+              Advanced overlay
+              <select id="overlay-select">
+                <option value="">Auto by data/rules</option>
+                <option value="acting">Acting</option>
+                <option value="delegation">Delegation</option>
+                <option value="peer_coverage">Peer coverage</option>
+                <option value="handover">Handover overlap</option>
+                <option value="project">Cross-dept project</option>
+                <option value="co_heads">Co-heads</option>
+              </select>
+            </label>
+            <label>
+              Request/effective date (optional)
               <input id="request-at-input" type="datetime-local" />
             </label>
             <label>
               Project code (optional)
               <input id="project-code-input" type="text" placeholder="UTP" />
             </label>
-            <button type="submit">Generate approval chain</button>
+            <button type="submit">Run simulation</button>
           </form>
           <pre id="routing-output">Choose a requester and action.</pre>
         </div>
 
         <div>
-          <h2>Team-Lead Permission Simulation</h2>
-          <form id="permission-form" class="stack">
+          <h2>Graph Edit Panel</h2>
+          <form id="edit-form" class="stack">
             <label>
-              Editor
+              Editor scope
+              <select id="editor-scope-select">
+                <option value="hro">HRO</option>
+                <option value="department_owner">Department Owner</option>
+                <option value="team_lead">Team Lead</option>
+              </select>
+            </label>
+            <label>
+              Editor user
               <select id="editor-select"></select>
             </label>
             <label>
-              Target user
+              Target node/user
               <select id="target-select"></select>
             </label>
-            <button type="submit">Check permission</button>
+            <label>
+              New department
+              <select id="edit-department-select"></select>
+            </label>
+            <label>
+              New org-unit/team
+              <select id="edit-org-unit-select"></select>
+            </label>
+            <label>
+              New position/level
+              <select id="edit-level-select"></select>
+            </label>
+            <label>
+              New primary manager
+              <select id="edit-manager-select"></select>
+            </label>
+            <label>
+              Team lead assignment
+              <select id="edit-team-lead-select">
+                <option value="">No change</option>
+                <option value="true">Assign team lead</option>
+                <option value="false">Remove team lead</option>
+              </select>
+            </label>
+            <button type="submit">Apply graph edit</button>
           </form>
-          <pre id="permission-output">Choose an editor and target user.</pre>
+          <pre id="permission-output">Choose graph edit values.</pre>
+
+          <form id="routing-rule-form" class="stack">
+            <h3>Action routing rule editor</h3>
+            <label>
+              Department
+              <select id="rule-department-select"></select>
+            </label>
+            <label>
+              Action type
+              <select id="rule-action-select"></select>
+            </label>
+            <label>
+              Approval level
+              <select id="rule-approval-level-select">
+                <option value="first_level">1st Level</option>
+                <option value="second_level">2nd Level</option>
+              </select>
+            </label>
+            <button type="submit">Update routing rule</button>
+          </form>
+
+          <form id="fallback-form" class="stack">
+            <h3>Department fallback editor</h3>
+            <label>
+              Department
+              <select id="fallback-department-select"></select>
+            </label>
+            <label>
+              Fallback approver
+              <select id="fallback-user-select"></select>
+            </label>
+            <button type="submit">Update fallback</button>
+          </form>
         </div>
       </section>
 

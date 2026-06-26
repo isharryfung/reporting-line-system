@@ -81,10 +81,11 @@ The sample data includes at least the following departments:
 Example Finance scenario:
 
 - Fiona — Finance Director (top level)
-- Mary — Senior Manager and Finance Team lead
+- Mary — Senior Manager and Team A lead
 - Nina — Senior Manager and secondary Finance co-head
 - Peter — Finance Officer
-- Quinn — Payroll Team Finance Officer
+- Quinn — Team B Finance Officer
+- Parker — Team C Finance Officer
 
 Example HR scenario:
 
@@ -156,6 +157,23 @@ python -m src.manual_test_app
 
 Open <http://127.0.0.1:8000>.
 
+## Editable graph + scenario builder usage
+
+1. Open **Department Org Chart** and choose a department.
+2. Click a graph node or choose a target user in **Graph Edit Panel**.
+3. Update position/level, department, org-unit/team, primary manager, and/or team-lead assignment, then apply.
+4. Optionally update department action routing rule (1st/2nd level) and fallback approver.
+5. Use **Scenario Builder** inputs (requester, action, department, org-unit, level, date, approval-level override, project code).
+6. Run simulation and review:
+   - final approval chain
+   - dashed approval route over the graph
+   - overlays applied
+   - fallback usage
+   - blocked/error reason when invalid
+   - audit explanation log.
+
+Solid edges indicate official reporting lines. Dashed edges indicate the generated approval route for the selected simulation.
+
 ## Full business/test case table
 
 | Business Case ID | Scenario | Input | Preconditions | Expected Output | Pass Criteria |
@@ -184,3 +202,11 @@ Open <http://127.0.0.1:8000>.
 | BC-22 | Circular reporting chain | Requester Peter, action `annual_leave` | Extra line Fiona → Peter creates a cycle | Error for circular reporting | API/service raises clear cycle error |
 | BC-23 | Inactive manager/user | Requester Peter or inactive requester Peter, action `annual_leave` | Mary is inactive or Peter is inactive | Error for inactive manager/requester | API/service raises clear inactive-user error |
 | BC-24 | Multiple active primary managers | Requester Peter, action `annual_leave` | Peter has two active primary reporting lines | Error for multiple active primary managers | API/service raises explicit single-primary-manager error |
+| BC-25 | Display layered org chart with ownership boundaries | Department `FIN` | Level 1-9 labels and ownership regions configured | Layered graph with team regions and official lines | UI/API includes `level_labels`, `ownership_regions`, `team_regions`, `graph` |
+| BC-26 | Edit user position/level from graph | Target Peter; set new level in edit panel | Valid level selected | Level updates in graph | Subsequent simulation reflects updated level metadata |
+| BC-27 | Edit department/org-unit/team from graph | Target Quinn; move team/department | Selected org-unit belongs to selected department | User moves to new team region | Graph and payload show updated org-unit membership |
+| BC-28 | Edit primary manager/reporting line from graph | Target Peter; manager Nina | Active same-department manager | New official reporting line saved | Next simulation uses new manager |
+| BC-29 | Change action type and approval level from scenario builder | Requester Peter; annual_leave; first/second-level mode | Rule exists | Approval chain length changes | Route output differs between first and second level |
+| BC-30 | Block circular reporting-line edit | Target Fiona; manager Peter | Would create cycle | Edit blocked with validation message | API returns explicit circular error |
+| BC-31 | Block unauthorized protected-level edit | Team lead Mary edits top-level Fiona | Fiona is protected top level | Edit blocked with validation message | API returns unauthorized/protected-level error |
+| BC-32 | Dashed approval path shown for selected scenario | Run scenario builder simulation | Graph nodes for requester + approvers exist | Dashed route overlays on graph | UI renders dashed path distinct from official lines |

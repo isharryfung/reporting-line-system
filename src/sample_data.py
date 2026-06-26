@@ -76,10 +76,11 @@ def seed_sample_data(session: Session) -> dict[str, Any]:
     )
     session.flush()
 
-    finance_team = OrgUnit(dept_id=finance.id, name="Finance Team", code="FIN-TEAM")
-    payroll_team = OrgUnit(dept_id=finance.id, name="Payroll Team", code="PAYROLL")
+    finance_team = OrgUnit(dept_id=finance.id, name="Team A", code="FIN-TEAM")
+    payroll_team = OrgUnit(dept_id=finance.id, name="Team B", code="PAYROLL")
+    systems_team = OrgUnit(dept_id=finance.id, name="Team C", code="TEAM-C")
     hr_advisory = OrgUnit(dept_id=hr.id, name="HR Advisory", code="HR-ADV")
-    session.add_all([finance_team, payroll_team, hr_advisory])
+    session.add_all([finance_team, payroll_team, systems_team, hr_advisory])
     session.flush()
 
     fiona = User(
@@ -112,6 +113,12 @@ def seed_sample_data(session: Session) -> dict[str, Any]:
         dept_id=finance.id,
         dept_level_id=fin_level3.id,
     )
+    parker = User(
+        name="Parker",
+        email="parker@university.edu",
+        dept_id=finance.id,
+        dept_level_id=fin_level3.id,
+    )
     henry = User(
         name="Henry",
         email="henry@university.edu",
@@ -130,7 +137,7 @@ def seed_sample_data(session: Session) -> dict[str, Any]:
         dept_id=hr.id,
         dept_level_id=hr_level3.id,
     )
-    session.add_all([fiona, mary, nina, peter, quinn, henry, helen, olivia])
+    session.add_all([fiona, mary, nina, peter, quinn, parker, henry, helen, olivia])
     session.flush()
 
     session.add_all(
@@ -157,6 +164,10 @@ def seed_sample_data(session: Session) -> dict[str, Any]:
                 user_id=quinn.id,
             ),
             OrgUnitMembership(
+                org_unit_id=systems_team.id,
+                user_id=parker.id,
+            ),
+            OrgUnitMembership(
                 org_unit_id=hr_advisory.id,
                 user_id=henry.id,
             ),
@@ -179,6 +190,7 @@ def seed_sample_data(session: Session) -> dict[str, Any]:
             ReportingLine(user_id=nina.id, manager_id=fiona.id, dept_id=finance.id),
             ReportingLine(user_id=peter.id, manager_id=mary.id, dept_id=finance.id),
             ReportingLine(user_id=quinn.id, manager_id=fiona.id, dept_id=finance.id),
+            ReportingLine(user_id=parker.id, manager_id=mary.id, dept_id=finance.id),
             ReportingLine(user_id=helen.id, manager_id=henry.id, dept_id=hr.id),
             ReportingLine(user_id=olivia.id, manager_id=helen.id, dept_id=hr.id),
         ]
@@ -395,6 +407,7 @@ def seed_sample_data(session: Session) -> dict[str, Any]:
         "nina": nina,
         "peter": peter,
         "quinn": quinn,
+        "parker": parker,
         "henry": henry,
         "helen": helen,
         "olivia": olivia,
