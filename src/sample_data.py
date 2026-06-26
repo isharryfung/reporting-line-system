@@ -41,34 +41,34 @@ def seed_sample_data(session: Session) -> dict[str, Any]:
 
     fin_level1 = DeptLevel(
         dept_id=finance.id,
-        level_rank=1,
+        level_rank=4,
         level_name="Finance Director",
         is_top_level=True,
     )
     fin_level2 = DeptLevel(
         dept_id=finance.id,
-        level_rank=2,
+        level_rank=5,
         level_name="Senior Manager",
     )
     fin_level3 = DeptLevel(
         dept_id=finance.id,
-        level_rank=3,
+        level_rank=9,
         level_name="Finance Officer",
     )
     hr_level1 = DeptLevel(
         dept_id=hr.id,
-        level_rank=1,
+        level_rank=4,
         level_name="HR Director",
         is_top_level=True,
     )
     hr_level2 = DeptLevel(
         dept_id=hr.id,
-        level_rank=2,
+        level_rank=5,
         level_name="HR Manager",
     )
     hr_level3 = DeptLevel(
         dept_id=hr.id,
-        level_rank=3,
+        level_rank=9,
         level_name="HR Officer",
     )
     session.add_all(

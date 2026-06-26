@@ -3,13 +3,27 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from sqlalchemy.orm import Session
+
 from src.database import create_engine_sqlite, get_session, init_db
+from src.models import (
+    Action,
+    ActionRoutingRule,
+    Department,
+    DepartmentFallbackRule,
+    DeptLevel,
+    OrgUnit,
+    OrgUnitMembership,
+    ReportingLine,
+    User,
+)
 from src.sample_data import seed_sample_data
 from src.services.approval import submit_request
 from src.services.org_chart import get_department_org_chart
@@ -23,6 +37,52 @@ from src.services.routing import (
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 FRONTEND_DIR = ROOT_DIR / "frontend"
+
+# ---------------------------------------------------------------------------
+# Persistent state: one SQLite file, seeded once per process.
+# Set REPORTING_LINE_DB env var to override the path (useful for tests).
+# ---------------------------------------------------------------------------
+_DB_PATH = os.environ.get("REPORTING_LINE_DB", "/tmp/reporting_line_manual_test.db")
+_engine = None
+_SessionFactory = None
+
+
+def _get_engine():
+    global _engine, _SessionFactory
+    if _engine is None:
+        _engine = create_engine_sqlite(_DB_PATH)
+        init_db(_engine)
+        from sqlalchemy.orm import sessionmaker
+        _SessionFactory = sessionmaker(bind=_engine)
+        # Seed if empty
+        session = _SessionFactory()
+        try:
+            if session.query(User).count() == 0:
+                seed_sample_data(session)
+        finally:
+            session.close()
+    return _engine
+
+
+def _get_session() -> Session:
+    _get_engine()
+    return _SessionFactory()
+
+
+def _reset_database() -> None:
+    """Drop all data and re-seed from defaults."""
+    global _engine, _SessionFactory
+    from src.models import Base
+    if _engine is not None:
+        Base.metadata.drop_all(_engine)
+        Base.metadata.create_all(_engine)
+        session = _SessionFactory()
+        try:
+            seed_sample_data(session)
+        finally:
+            session.close()
+    else:
+        _get_engine()
 
 
 BUSINESS_CASES = [
@@ -146,6 +206,46 @@ BUSINESS_CASES = [
         "expected_output": "Clear error.",
         "pass_criteria": "Routing rejects self-delegation.",
     },
+    {
+        "id": "BC-16",
+        "scenario": "Diagram node edit updates level and refreshes chart.",
+        "input": "Edit Peter's level from Finance Officer (Level 9) to Senior Manager (Level 5)",
+        "preconditions": "POC state is editable via diagram UI.",
+        "expected_output": "Peter's node shows Level 5; routing chain updates accordingly.",
+        "pass_criteria": "PUT /api/users/{id} persists change; GET /api/org-chart reflects update.",
+    },
+    {
+        "id": "BC-17",
+        "scenario": "Diagram edge edit updates reporting line.",
+        "input": "Change Peter's manager from Mary to Nina via diagram edit panel",
+        "preconditions": "POC state is editable via diagram UI.",
+        "expected_output": "Peter's manager is now Nina; Annual Leave routes Peter→Nina→Fiona.",
+        "pass_criteria": "POST /api/reporting-lines persists change; routing reflects new manager.",
+    },
+    {
+        "id": "BC-18",
+        "scenario": "Circular reporting line edit is blocked.",
+        "input": "Attempt to set Fiona's manager to Peter",
+        "preconditions": "Peter reports to Mary who reports to Fiona — would create a cycle.",
+        "expected_output": "Validation error: circular reporting line detected.",
+        "pass_criteria": "POST /api/reporting-lines returns 400 with clear error.",
+    },
+    {
+        "id": "BC-19",
+        "scenario": "Seed data edit changes available users in scenario builder.",
+        "input": "Add new user via seed data editor; run scenario",
+        "preconditions": "POC seed data is editable.",
+        "expected_output": "New user appears in requester dropdown and can be selected.",
+        "pass_criteria": "POST /api/users creates user; bootstrap returns updated list.",
+    },
+    {
+        "id": "BC-20",
+        "scenario": "Corrected default levels are displayed.",
+        "input": "Load the POC page",
+        "preconditions": "Default seed data is loaded.",
+        "expected_output": "Director shown as Level 4, Senior Manager as Level 5, Officer as Level 9.",
+        "pass_criteria": "Seed user pills and org chart nodes show correct level labels and ranks.",
+    },
 ]
 
 
@@ -221,34 +321,53 @@ def _parse_request_at(raw_value: str | None) -> datetime | None:
     return datetime.fromisoformat(raw_value)
 
 
+# ---------------------------------------------------------------------------
+# Circular-reporting detection helper
+# ---------------------------------------------------------------------------
+
+def _would_create_cycle(session: Session, user_id: int, proposed_manager_id: int) -> bool:
+    """Return True if making proposed_manager_id the manager of user_id would create a cycle."""
+    if user_id == proposed_manager_id:
+        return True
+    visited: set[int] = set()
+    current = proposed_manager_id
+    while current is not None:
+        if current in visited:
+            break
+        if current == user_id:
+            return True
+        visited.add(current)
+        line = (
+            session.query(ReportingLine)
+            .filter(
+                ReportingLine.user_id == current,
+                ReportingLine.is_primary.is_(True),
+                ReportingLine.is_active.is_(True),
+            )
+            .first()
+        )
+        if line is None:
+            break
+        current = line.manager_id
+    return False
+
+
 def build_bootstrap_payload() -> dict[str, Any]:
-    with _seeded_session() as (_, session, data):
-        users = [
-            _serialize_user(user)
-            for _, user in data.items()
-            if hasattr(user, "email")
-        ]
-        users.sort(key=lambda item: (item["department_code"], item["level_rank"], item["name"]))
+    session = _get_session()
+    try:
+        departments = session.query(Department).order_by(Department.name).all()
+        users_raw = session.query(User).filter(User.is_active.is_(True)).all()
+        users = sorted(
+            [_serialize_user(user) for user in users_raw],
+            key=lambda item: (item["department_code"], item["level_rank"], item["name"]),
+        )
+        actions_raw = session.query(Action).order_by(Action.name).all()
         return {
             "departments": [
-                {"code": department.code, "name": department.name}
-                for department in sorted([data["finance"], data["hr"]], key=lambda item: item.name)
+                {"code": d.code, "name": d.name} for d in departments
             ],
             "actions": [
-                {"code": data["annual_leave"].code, "name": data["annual_leave"].name},
-                {"code": data["sick_leave"].code, "name": data["sick_leave"].name},
-                {
-                    "code": data["training_request"].code,
-                    "name": data["training_request"].name,
-                },
-                {
-                    "code": data["project_change"].code,
-                    "name": data["project_change"].name,
-                },
-                {
-                    "code": data["finance_team_plan"].code,
-                    "name": data["finance_team_plan"].name,
-                },
+                {"code": a.code, "name": a.name} for a in actions_raw
             ],
             "users": users,
             "business_cases": BUSINESS_CASES,
@@ -258,15 +377,15 @@ def build_bootstrap_payload() -> dict[str, Any]:
                 "Each staff member can have only one active official primary manager.",
                 "Advanced cases are modeled as temporary overlays, not extra primary managers.",
                 "Project overlays apply only to project-scoped actions.",
+                "Director = Level 4, Senior Manager = Level 5, Officer = Level 9.",
             ],
             "org_charts": {
-                department["code"]: get_department_org_chart(session, department["code"])
-                for department in [
-                    {"code": data["finance"].code},
-                    {"code": data["hr"].code},
-                ]
+                d.code: get_department_org_chart(session, d.code)
+                for d in departments
             },
         }
+    finally:
+        session.close()
 
 
 def simulate_action_request(
@@ -275,35 +394,37 @@ def simulate_action_request(
     request_at: str | None = None,
     project_code: str | None = None,
 ) -> dict[str, Any]:
-    with _seeded_session() as (_, session, _):
-        try:
-            parsed_request_at = _parse_request_at(request_at)
-            chain = build_approval_chain(
-                session,
-                requester_id,
-                action_code,
-                request_at=parsed_request_at,
-                project_code=project_code,
-            )
-            request = submit_request(
-                session,
-                requester_id,
-                action_code,
-                request_at=parsed_request_at,
-                project_code=project_code,
-            )
-            response = approval_chain_to_dict(chain)
-            response.update(
-                {
-                    "status": "success",
-                    "request_id": request.id,
-                    "request_at": request_at,
-                    "project_code": project_code,
-                }
-            )
-            return response
-        except RoutingError as exc:
-            return {"status": "error", "error": str(exc)}
+    session = _get_session()
+    try:
+        parsed_request_at = _parse_request_at(request_at)
+        chain = build_approval_chain(
+            session,
+            requester_id,
+            action_code,
+            request_at=parsed_request_at,
+            project_code=project_code,
+        )
+        request = submit_request(
+            session,
+            requester_id,
+            action_code,
+            request_at=parsed_request_at,
+            project_code=project_code,
+        )
+        response = approval_chain_to_dict(chain)
+        response.update(
+            {
+                "status": "success",
+                "request_id": request.id,
+                "request_at": request_at,
+                "project_code": project_code,
+            }
+        )
+        return response
+    except RoutingError as exc:
+        return {"status": "error", "error": str(exc)}
+    finally:
+        session.close()
 
 
 def simulate_advanced_scenario(scenario_id: str) -> dict[str, Any]:
@@ -337,13 +458,16 @@ def simulate_advanced_scenario(scenario_id: str) -> dict[str, Any]:
 
 
 def simulate_team_lead_permission(editor_id: int, target_user_id: int) -> dict[str, Any]:
-    with _seeded_session() as (_, session, _):
+    session = _get_session()
+    try:
         decision = validate_team_lead_edit_permission(
             session,
             editor_id=editor_id,
             target_user_id=target_user_id,
         )
         return {"allowed": decision.allowed, "reason": decision.reason}
+    finally:
+        session.close()
 
 
 def _serialize_user(user: Any) -> dict[str, Any]:
@@ -352,37 +476,502 @@ def _serialize_user(user: Any) -> dict[str, Any]:
         for membership in user.org_unit_memberships
         if membership.is_active
     ]
+    org_unit_ids = [
+        membership.org_unit.id
+        for membership in user.org_unit_memberships
+        if membership.is_active
+    ]
     is_team_lead = any(
         membership.is_active and membership.is_team_lead
         for membership in user.org_unit_memberships
     )
+    active_lines = [
+        line
+        for line in user.reporting_lines
+        if line.is_active and line.is_primary and line.manager is not None
+    ]
+    manager_id = active_lines[0].manager_id if len(active_lines) == 1 else None
+    manager_name = active_lines[0].manager.name if len(active_lines) == 1 else None
     return {
         "id": user.id,
         "name": user.name,
         "email": user.email,
         "department_code": user.department.code,
+        "department_id": user.dept_id,
         "level_name": user.dept_level.level_name,
         "level_rank": user.dept_level.level_rank,
+        "dept_level_id": user.dept_level_id,
         "org_units": memberships,
+        "org_unit_ids": org_unit_ids,
         "is_team_lead": is_team_lead,
+        "is_active": user.is_active,
+        "manager_id": manager_id,
+        "manager_name": manager_name,
     }
 
 
-class _SeededSession:
-    def __enter__(self) -> tuple[Any, Any, dict[str, Any]]:
-        self.engine = create_engine_sqlite(":memory:")
-        init_db(self.engine)
-        self.session = get_session(self.engine)
-        self.data = seed_sample_data(self.session)
-        return self.engine, self.session, self.data
+# ---------------------------------------------------------------------------
+# Seed data read helpers
+# ---------------------------------------------------------------------------
 
-    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
-        self.session.close()
-        self.engine.dispose()
+def get_seed_data() -> dict[str, Any]:
+    """Return all editable seed data tables."""
+    session = _get_session()
+    try:
+        departments = session.query(Department).order_by(Department.name).all()
+        dept_levels = session.query(DeptLevel).order_by(DeptLevel.dept_id, DeptLevel.level_rank).all()
+        org_units = session.query(OrgUnit).order_by(OrgUnit.name).all()
+        users = session.query(User).order_by(User.name).all()
+        reporting_lines = (
+            session.query(ReportingLine)
+            .filter(ReportingLine.is_active.is_(True))
+            .order_by(ReportingLine.user_id)
+            .all()
+        )
+        actions = session.query(Action).order_by(Action.name).all()
+        routing_rules = session.query(ActionRoutingRule).all()
+        fallback_rules = session.query(DepartmentFallbackRule).all()
+
+        return {
+            "departments": [
+                {"id": d.id, "name": d.name, "code": d.code}
+                for d in departments
+            ],
+            "dept_levels": [
+                {
+                    "id": lv.id,
+                    "dept_id": lv.dept_id,
+                    "dept_name": lv.department.name,
+                    "level_rank": lv.level_rank,
+                    "level_name": lv.level_name,
+                    "is_top_level": lv.is_top_level,
+                }
+                for lv in dept_levels
+            ],
+            "org_units": [
+                {"id": ou.id, "dept_id": ou.dept_id, "dept_name": ou.department.name,
+                 "name": ou.name, "code": ou.code}
+                for ou in org_units
+            ],
+            "users": [
+                {
+                    "id": u.id,
+                    "name": u.name,
+                    "email": u.email,
+                    "dept_id": u.dept_id,
+                    "dept_name": u.department.name,
+                    "dept_level_id": u.dept_level_id,
+                    "level_name": u.dept_level.level_name,
+                    "level_rank": u.dept_level.level_rank,
+                    "is_active": u.is_active,
+                }
+                for u in users
+            ],
+            "reporting_lines": [
+                {
+                    "id": rl.id,
+                    "user_id": rl.user_id,
+                    "user_name": rl.user.name,
+                    "manager_id": rl.manager_id,
+                    "manager_name": rl.manager.name if rl.manager else None,
+                    "dept_id": rl.dept_id,
+                    "is_primary": rl.is_primary,
+                    "is_active": rl.is_active,
+                }
+                for rl in reporting_lines
+            ],
+            "actions": [
+                {
+                    "id": a.id,
+                    "name": a.name,
+                    "code": a.code,
+                    "is_project_scoped": a.is_project_scoped,
+                }
+                for a in actions
+            ],
+            "routing_rules": [
+                {
+                    "id": rr.id,
+                    "action_id": rr.action_id,
+                    "action_name": rr.action.name,
+                    "dept_id": rr.dept_id,
+                    "dept_name": rr.department.name,
+                    "requires_primary": rr.requires_primary,
+                    "requires_second_level": rr.requires_second_level,
+                }
+                for rr in routing_rules
+            ],
+            "fallback_rules": [
+                {
+                    "id": fb.id,
+                    "dept_id": fb.dept_id,
+                    "dept_name": fb.department.name,
+                    "fallback_user_id": fb.fallback_user_id,
+                    "fallback_user_name": fb.fallback_user.name if fb.fallback_user else None,
+                    "fallback_label": fb.fallback_label,
+                }
+                for fb in fallback_rules
+            ],
+        }
+    finally:
+        session.close()
 
 
-def _seeded_session() -> _SeededSession:
-    return _SeededSession()
+# ---------------------------------------------------------------------------
+# User CRUD
+# ---------------------------------------------------------------------------
+
+def api_update_user(user_id: int, body: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    """Update an existing user's fields."""
+    session = _get_session()
+    try:
+        user = session.get(User, user_id)
+        if user is None:
+            return {"error": f"User {user_id} not found."}, 404
+
+        if "name" in body:
+            body_name = str(body["name"]).strip()
+            if not body_name:
+                return {"error": "name must not be empty."}, 400
+            user.name = body_name
+
+        if "email" in body:
+            body_email = str(body["email"]).strip()
+            if not body_email:
+                return {"error": "email must not be empty."}, 400
+            user.email = body_email
+
+        if "dept_level_id" in body:
+            level_id = int(body["dept_level_id"])
+            level = session.get(DeptLevel, level_id)
+            if level is None:
+                return {"error": f"DeptLevel {level_id} not found."}, 400
+            user.dept_level_id = level_id
+            user.dept_id = level.dept_id  # keep department in sync with level
+
+        if "dept_id" in body:
+            dept_id = int(body["dept_id"])
+            dept = session.get(Department, dept_id)
+            if dept is None:
+                return {"error": f"Department {dept_id} not found."}, 400
+            user.dept_id = dept_id
+
+        if "is_active" in body:
+            user.is_active = bool(body["is_active"])
+
+        session.commit()
+        session.refresh(user)
+
+        # Also handle org-unit membership update
+        if "org_unit_id" in body or "is_team_lead" in body:
+            new_ou_id = body.get("org_unit_id")
+            is_lead = bool(body.get("is_team_lead", False))
+            if new_ou_id is not None:
+                new_ou_id = int(new_ou_id)
+                # Deactivate all current memberships
+                for m in user.org_unit_memberships:
+                    m.is_active = False
+                # Find or create membership in target org unit
+                existing = (
+                    session.query(OrgUnitMembership)
+                    .filter(
+                        OrgUnitMembership.user_id == user_id,
+                        OrgUnitMembership.org_unit_id == new_ou_id,
+                    )
+                    .first()
+                )
+                if existing:
+                    existing.is_active = True
+                    existing.is_team_lead = is_lead
+                else:
+                    session.add(
+                        OrgUnitMembership(
+                            org_unit_id=new_ou_id,
+                            user_id=user_id,
+                            is_team_lead=is_lead,
+                        )
+                    )
+                session.commit()
+                session.refresh(user)
+
+        return {"status": "ok", "user": _serialize_user(user)}, 200
+    except Exception as exc:
+        session.rollback()
+        return {"error": str(exc)}, 500
+    finally:
+        session.close()
+
+
+def api_create_user(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    """Create a new user."""
+    session = _get_session()
+    try:
+        name = str(body.get("name", "")).strip()
+        email = str(body.get("email", "")).strip()
+        dept_level_id = body.get("dept_level_id")
+        if not name or not email or dept_level_id is None:
+            return {"error": "name, email, and dept_level_id are required."}, 400
+
+        dept_level_id = int(dept_level_id)
+        level = session.get(DeptLevel, dept_level_id)
+        if level is None:
+            return {"error": f"DeptLevel {dept_level_id} not found."}, 400
+
+        # Check email uniqueness
+        existing = session.query(User).filter(User.email == email).first()
+        if existing:
+            return {"error": f"Email {email!r} is already in use."}, 400
+
+        user = User(
+            name=name,
+            email=email,
+            dept_id=level.dept_id,
+            dept_level_id=dept_level_id,
+        )
+        session.add(user)
+        session.commit()
+        session.refresh(user)
+        return {"status": "ok", "user": _serialize_user(user)}, 201
+    except Exception as exc:
+        session.rollback()
+        return {"error": str(exc)}, 500
+    finally:
+        session.close()
+
+
+# ---------------------------------------------------------------------------
+# Reporting-line CRUD
+# ---------------------------------------------------------------------------
+
+def api_create_reporting_line(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    """Create or replace the active primary reporting line for a user."""
+    session = _get_session()
+    try:
+        user_id = body.get("user_id")
+        manager_id = body.get("manager_id")
+        if user_id is None or manager_id is None:
+            return {"error": "user_id and manager_id are required."}, 400
+
+        user_id = int(user_id)
+        manager_id = int(manager_id)
+
+        user = session.get(User, user_id)
+        manager = session.get(User, manager_id)
+        if user is None:
+            return {"error": f"User {user_id} not found."}, 404
+        if manager is None:
+            return {"error": f"Manager {manager_id} not found."}, 404
+
+        # Circular check
+        if _would_create_cycle(session, user_id, manager_id):
+            return {
+                "error": "Circular reporting line detected: this assignment would create a cycle."
+            }, 400
+
+        # Deactivate current primary lines for this user
+        existing_lines = (
+            session.query(ReportingLine)
+            .filter(
+                ReportingLine.user_id == user_id,
+                ReportingLine.is_primary.is_(True),
+                ReportingLine.is_active.is_(True),
+            )
+            .all()
+        )
+        for line in existing_lines:
+            line.is_active = False
+
+        # Create new primary line
+        new_line = ReportingLine(
+            user_id=user_id,
+            manager_id=manager_id,
+            dept_id=user.dept_id,
+            is_primary=True,
+        )
+        session.add(new_line)
+        session.commit()
+        return {
+            "status": "ok",
+            "reporting_line": {
+                "id": new_line.id,
+                "user_id": user_id,
+                "user_name": user.name,
+                "manager_id": manager_id,
+                "manager_name": manager.name,
+            },
+        }, 201
+    except Exception as exc:
+        session.rollback()
+        return {"error": str(exc)}, 500
+    finally:
+        session.close()
+
+
+def api_delete_reporting_line(line_id: int) -> tuple[dict[str, Any], int]:
+    """Deactivate a reporting line by ID."""
+    session = _get_session()
+    try:
+        line = session.get(ReportingLine, line_id)
+        if line is None:
+            return {"error": f"ReportingLine {line_id} not found."}, 404
+        line.is_active = False
+        session.commit()
+        return {"status": "ok"}, 200
+    except Exception as exc:
+        session.rollback()
+        return {"error": str(exc)}, 500
+    finally:
+        session.close()
+
+
+# ---------------------------------------------------------------------------
+# Dept-level CRUD
+# ---------------------------------------------------------------------------
+
+def api_update_dept_level(level_id: int, body: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    """Update a department level's name or rank."""
+    session = _get_session()
+    try:
+        level = session.get(DeptLevel, level_id)
+        if level is None:
+            return {"error": f"DeptLevel {level_id} not found."}, 404
+
+        if "level_name" in body:
+            level.level_name = str(body["level_name"]).strip()
+        if "level_rank" in body:
+            level.level_rank = int(body["level_rank"])
+        if "is_top_level" in body:
+            level.is_top_level = bool(body["is_top_level"])
+
+        session.commit()
+        return {
+            "status": "ok",
+            "dept_level": {
+                "id": level.id,
+                "dept_id": level.dept_id,
+                "level_rank": level.level_rank,
+                "level_name": level.level_name,
+                "is_top_level": level.is_top_level,
+            },
+        }, 200
+    except Exception as exc:
+        session.rollback()
+        return {"error": str(exc)}, 500
+    finally:
+        session.close()
+
+
+# ---------------------------------------------------------------------------
+# Routing-rule update
+# ---------------------------------------------------------------------------
+
+def api_update_routing_rule(rule_id: int, body: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    """Update requires_primary / requires_second_level for an action routing rule."""
+    session = _get_session()
+    try:
+        rule = session.get(ActionRoutingRule, rule_id)
+        if rule is None:
+            return {"error": f"ActionRoutingRule {rule_id} not found."}, 404
+
+        if "requires_primary" in body:
+            rule.requires_primary = bool(body["requires_primary"])
+        if "requires_second_level" in body:
+            rule.requires_second_level = bool(body["requires_second_level"])
+
+        session.commit()
+        return {
+            "status": "ok",
+            "routing_rule": {
+                "id": rule.id,
+                "action_id": rule.action_id,
+                "dept_id": rule.dept_id,
+                "requires_primary": rule.requires_primary,
+                "requires_second_level": rule.requires_second_level,
+            },
+        }, 200
+    except Exception as exc:
+        session.rollback()
+        return {"error": str(exc)}, 500
+    finally:
+        session.close()
+
+
+# ---------------------------------------------------------------------------
+# Fallback-rule update
+# ---------------------------------------------------------------------------
+
+def api_update_fallback_rule(rule_id: int, body: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    """Update the fallback approver for a department."""
+    session = _get_session()
+    try:
+        rule = session.get(DepartmentFallbackRule, rule_id)
+        if rule is None:
+            return {"error": f"DepartmentFallbackRule {rule_id} not found."}, 404
+
+        if "fallback_user_id" in body:
+            uid = int(body["fallback_user_id"])
+            user = session.get(User, uid)
+            if user is None:
+                return {"error": f"User {uid} not found."}, 400
+            rule.fallback_user_id = uid
+
+        if "fallback_label" in body:
+            rule.fallback_label = str(body["fallback_label"])
+
+        session.commit()
+        return {"status": "ok"}, 200
+    except Exception as exc:
+        session.rollback()
+        return {"error": str(exc)}, 500
+    finally:
+        session.close()
+
+
+# ---------------------------------------------------------------------------
+# Diagram node update (combines user + reporting-line in one call)
+# ---------------------------------------------------------------------------
+
+def api_update_diagram_node(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    """Update a user's profile and optionally their primary manager from the diagram."""
+    user_id = body.get("user_id")
+    if user_id is None:
+        return {"error": "user_id is required."}, 400
+
+    user_id = int(user_id)
+    errors = []
+
+    # Update user fields
+    user_fields = {
+        k: body[k]
+        for k in ("name", "email", "dept_level_id", "dept_id", "is_team_lead", "org_unit_id", "is_active")
+        if k in body
+    }
+    if user_fields:
+        result, status = api_update_user(user_id, user_fields)
+        if status not in (200, 201):
+            return result, status
+
+    # Update manager if provided
+    if "manager_id" in body:
+        manager_id = body["manager_id"]
+        if manager_id is not None:
+            rl_result, rl_status = api_create_reporting_line(
+                {"user_id": user_id, "manager_id": int(manager_id)}
+            )
+            if rl_status not in (200, 201):
+                return rl_result, rl_status
+
+    if errors:
+        return {"errors": errors}, 400
+
+    session = _get_session()
+    try:
+        user = session.get(User, user_id)
+        if user is None:
+            return {"error": f"User {user_id} not found."}, 404
+        return {"status": "ok", "user": _serialize_user(user)}, 200
+    finally:
+        session.close()
 
 
 class ManualTestRequestHandler(BaseHTTPRequestHandler):
@@ -405,15 +994,23 @@ class ManualTestRequestHandler(BaseHTTPRequestHandler):
         elif path == "/api/org-chart":
             department_code = query.get("department", ["FIN"])[0]
             try:
-                with _seeded_session() as (_, session, _):
+                session = _get_session()
+                try:
                     self._send_json(get_department_org_chart(session, department_code))
+                finally:
+                    session.close()
             except ValueError as exc:
                 self._send_json({"error": str(exc)}, status=404)
+        elif path == "/api/seed-data":
+            self._send_json(get_seed_data())
         else:
             self._send_json({"error": "Not found"}, status=404)
 
     def do_POST(self) -> None:
-        if self.path == "/api/simulate-request":
+        parsed = urlparse(self.path)
+        path = parsed.path
+
+        if path == "/api/simulate-request":
             payload = self._read_json_body()
             self._send_json(
                 simulate_action_request(
@@ -425,12 +1022,12 @@ class ManualTestRequestHandler(BaseHTTPRequestHandler):
             )
             return
 
-        if self.path == "/api/simulate-scenario":
+        if path == "/api/simulate-scenario":
             payload = self._read_json_body()
             self._send_json(simulate_advanced_scenario(str(payload["scenario_id"])))
             return
 
-        if self.path == "/api/team-lead-permission":
+        if path == "/api/team-lead-permission":
             payload = self._read_json_body()
             self._send_json(
                 simulate_team_lead_permission(
@@ -438,6 +1035,97 @@ class ManualTestRequestHandler(BaseHTTPRequestHandler):
                     target_user_id=int(payload["target_user_id"]),
                 )
             )
+            return
+
+        if path == "/api/users":
+            payload = self._read_json_body()
+            result, status = api_create_user(payload)
+            self._send_json(result, status=status)
+            return
+
+        if path == "/api/reporting-lines":
+            payload = self._read_json_body()
+            result, status = api_create_reporting_line(payload)
+            self._send_json(result, status=status)
+            return
+
+        if path == "/api/diagram/update-node":
+            payload = self._read_json_body()
+            result, status = api_update_diagram_node(payload)
+            self._send_json(result, status=status)
+            return
+
+        if path == "/api/reset":
+            _reset_database()
+            self._send_json({"status": "ok", "message": "Database reset to default seed data."})
+            return
+
+        self._send_json({"error": "Not found"}, status=404)
+
+    def do_PUT(self) -> None:
+        parsed = urlparse(self.path)
+        path = parsed.path
+        payload = self._read_json_body()
+
+        # PUT /api/users/{id}
+        if path.startswith("/api/users/"):
+            try:
+                user_id = int(path.split("/api/users/")[1])
+            except (ValueError, IndexError):
+                self._send_json({"error": "Invalid user ID."}, status=400)
+                return
+            result, status = api_update_user(user_id, payload)
+            self._send_json(result, status=status)
+            return
+
+        # PUT /api/dept-levels/{id}
+        if path.startswith("/api/dept-levels/"):
+            try:
+                level_id = int(path.split("/api/dept-levels/")[1])
+            except (ValueError, IndexError):
+                self._send_json({"error": "Invalid level ID."}, status=400)
+                return
+            result, status = api_update_dept_level(level_id, payload)
+            self._send_json(result, status=status)
+            return
+
+        # PUT /api/routing-rules/{id}
+        if path.startswith("/api/routing-rules/"):
+            try:
+                rule_id = int(path.split("/api/routing-rules/")[1])
+            except (ValueError, IndexError):
+                self._send_json({"error": "Invalid rule ID."}, status=400)
+                return
+            result, status = api_update_routing_rule(rule_id, payload)
+            self._send_json(result, status=status)
+            return
+
+        # PUT /api/fallback-rules/{id}
+        if path.startswith("/api/fallback-rules/"):
+            try:
+                rule_id = int(path.split("/api/fallback-rules/")[1])
+            except (ValueError, IndexError):
+                self._send_json({"error": "Invalid rule ID."}, status=400)
+                return
+            result, status = api_update_fallback_rule(rule_id, payload)
+            self._send_json(result, status=status)
+            return
+
+        self._send_json({"error": "Not found"}, status=404)
+
+    def do_DELETE(self) -> None:
+        parsed = urlparse(self.path)
+        path = parsed.path
+
+        # DELETE /api/reporting-lines/{id}
+        if path.startswith("/api/reporting-lines/"):
+            try:
+                line_id = int(path.split("/api/reporting-lines/")[1])
+            except (ValueError, IndexError):
+                self._send_json({"error": "Invalid line ID."}, status=400)
+                return
+            result, status = api_delete_reporting_line(line_id)
+            self._send_json(result, status=status)
             return
 
         self._send_json({"error": "Not found"}, status=404)
@@ -472,6 +1160,7 @@ class ManualTestRequestHandler(BaseHTTPRequestHandler):
 
 
 def run(host: str = "127.0.0.1", port: int = 8000) -> None:
+    _get_engine()  # Initialize DB before accepting requests
     server = ThreadingHTTPServer((host, port), ManualTestRequestHandler)
     print(f"Manual test app running at http://{host}:{port}")
     try:
