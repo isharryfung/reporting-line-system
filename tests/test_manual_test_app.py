@@ -39,7 +39,12 @@ def _fresh_state():
 
 def test_bootstrap_payload_exposes_seed_data_and_advanced_business_cases():
     payload = build_bootstrap_payload()
-    assert [department["code"] for department in payload["departments"]] == ["FIN", "HR"]
+    assert [department["code"] for department in payload["departments"]] == [
+        "FIN",
+        "HR",
+        "HRO",
+        "ITSO",
+    ]
     assert any(user["name"] == "Mary" and user["is_team_lead"] for user in payload["users"])
     assert len(BUSINESS_CASES) >= 15
     assert len(ADVANCED_SCENARIOS) >= 8
@@ -213,7 +218,7 @@ def test_get_seed_data_returns_all_entity_types():
     assert "actions" in data
     assert "routing_rules" in data
     assert "fallback_rules" in data
-    assert len(data["departments"]) == 2
+    assert {d["code"] for d in data["departments"]} == {"FIN", "HR", "HRO", "ITSO"}
     assert len(data["users"]) > 0
 
 

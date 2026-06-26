@@ -49,6 +49,27 @@ Then open <http://127.0.0.1:8000>.
 | **5** | **Senior Manager** / HR Manager |
 | **9** | **Officer** (Finance Officer, HR Officer) |
 
+## ITSO and HRO departments
+
+The POC also seeds two larger departments that follow their own level
+structures: **ITSO** (Information Technology Services Office, ~30 staff) and
+**HRO** (Human Resources Office, ~20 staff). Staff are split across several
+teams, each with its own reporting line up to the department head.
+
+| Level | ITSO Position | HRO Position |
+|---|---|---|
+| 1 | Department Head | Department Head |
+| 2 | Senior Manager (Team Lead) | Manager (Team Lead) |
+| 3 | Manager | Assistant Manager |
+| 4 | Systems Analyst | — |
+| 5 | Analyst Programmer | Officer |
+| 6 | Programmer | Assistant Officer |
+
+- **ITSO teams:** Infrastructure, Applications, Service Desk
+- **HRO teams:** Recruitment, Operations
+- Each department has a top-level fallback approver and its own routing rules
+  for Annual Leave, Sick Leave, and Training Request.
+
 ## Frontend POC
 
 The browser UI is organized into seven tabs:

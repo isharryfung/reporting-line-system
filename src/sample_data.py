@@ -32,6 +32,310 @@ def _dt(year: int, month: int, day: int) -> datetime:
     return datetime(year, month, day, tzinfo=timezone.utc)
 
 
+def _build_team(
+    session: Session,
+    *,
+    dept: Department,
+    team: OrgUnit,
+    level_by_rank: dict[int, DeptLevel],
+    composition: list[tuple[int, int]],
+    names: "Any",
+    head: User,
+) -> list[User]:
+    """Create users for a single team and wire their reporting lines.
+
+    ``composition`` is an ordered list of ``(level_rank, count)`` tuples sorted
+    from the most senior level (the team-lead level) down to the most junior.
+    Each junior user reports, round-robin, to a user at the nearest more-senior
+    level present in the team; the team-lead reports to the department head.
+    """
+    rank_order = [rank for rank, _ in composition]
+    lead_rank = rank_order[0]
+    by_rank: dict[int, list[User]] = {}
+    created: list[User] = []
+
+    for rank, count in composition:
+        for _ in range(count):
+            person_name = next(names)
+            user = User(
+                name=person_name,
+                email=f"{person_name.lower()}@university.edu",
+                dept_id=dept.id,
+                dept_level_id=level_by_rank[rank].id,
+            )
+            session.add(user)
+            session.flush()
+            by_rank.setdefault(rank, []).append(user)
+            created.append(user)
+
+    for pos, rank in enumerate(rank_order):
+        members = by_rank.get(rank, [])
+        if rank == lead_rank:
+            for index, user in enumerate(members):
+                session.add(
+                    OrgUnitMembership(
+                        org_unit_id=team.id,
+                        user_id=user.id,
+                        is_team_lead=(index == 0),
+                    )
+                )
+                session.add(
+                    ReportingLine(
+                        user_id=user.id, manager_id=head.id, dept_id=dept.id
+                    )
+                )
+            continue
+
+        senior_members: list[User] = []
+        for senior_rank in reversed(rank_order[:pos]):
+            if by_rank.get(senior_rank):
+                senior_members = by_rank[senior_rank]
+                break
+        if not senior_members:
+            senior_members = by_rank[lead_rank]
+
+        for index, user in enumerate(members):
+            manager = senior_members[index % len(senior_members)]
+            session.add(
+                OrgUnitMembership(org_unit_id=team.id, user_id=user.id)
+            )
+            session.add(
+                ReportingLine(
+                    user_id=user.id, manager_id=manager.id, dept_id=dept.id
+                )
+            )
+
+    session.flush()
+    return created
+
+
+def _seed_itso_hro_departments(
+    session: Session, actions: dict[str, Action]
+) -> dict[str, Any]:
+    """Seed the ITSO and HRO departments with levels, teams and staff.
+
+    ITSO carries roughly 30 staff and HRO roughly 20 staff, each split across
+    several teams with their own reporting lines, matching the level mapping
+    requested for the POC.
+    """
+    itso = Department(name="Information Technology Services Office", code="ITSO")
+    hro = Department(name="Human Resources Office", code="HRO")
+    session.add_all([itso, hro])
+    session.flush()
+
+    # ITSO levels (rank 1 = most senior / top level).
+    itso_level_specs = [
+        (1, "Department Head", True),
+        (2, "Senior Manager (Team Lead)", False),
+        (3, "Manager", False),
+        (4, "Systems Analyst", False),
+        (5, "Analyst Programmer", False),
+        (6, "Programmer", False),
+    ]
+    # HRO levels (no rank 4 - Systems Analyst is ITSO only).
+    hro_level_specs = [
+        (1, "Department Head", True),
+        (2, "Manager (Team Lead)", False),
+        (3, "Assistant Manager", False),
+        (5, "Officer", False),
+        (6, "Assistant Officer", False),
+    ]
+
+    itso_levels: dict[int, DeptLevel] = {}
+    for rank, level_name, is_top in itso_level_specs:
+        level = DeptLevel(
+            dept_id=itso.id,
+            level_rank=rank,
+            level_name=level_name,
+            is_top_level=is_top,
+        )
+        session.add(level)
+        itso_levels[rank] = level
+
+    hro_levels: dict[int, DeptLevel] = {}
+    for rank, level_name, is_top in hro_level_specs:
+        level = DeptLevel(
+            dept_id=hro.id,
+            level_rank=rank,
+            level_name=level_name,
+            is_top_level=is_top,
+        )
+        session.add(level)
+        hro_levels[rank] = level
+    session.flush()
+
+    itso_infra = OrgUnit(dept_id=itso.id, name="Infrastructure Team", code="ITSO-INFRA")
+    itso_apps = OrgUnit(dept_id=itso.id, name="Applications Team", code="ITSO-APP")
+    itso_svc = OrgUnit(dept_id=itso.id, name="Service Desk Team", code="ITSO-SVC")
+    hro_recruitment = OrgUnit(dept_id=hro.id, name="Recruitment Team", code="HRO-REC")
+    hro_operations = OrgUnit(dept_id=hro.id, name="Operations Team", code="HRO-OPS")
+    session.add_all(
+        [itso_infra, itso_apps, itso_svc, hro_recruitment, hro_operations]
+    )
+    session.flush()
+
+    itso_names = iter(
+        [
+            "Ivan", "Ingrid", "Isaac", "Iris", "Igor",
+            "Bella", "Bruno", "Bianca", "Boris", "Bonnie",
+            "Carl", "Cara", "Cyrus", "Cleo", "Conrad",
+            "Dana", "Dean", "Daisy", "Drake", "Dora",
+            "Ethan", "Elena", "Evan", "Esme", "Eric",
+            "Felix", "Faye", "Fritz", "Greg", "Gemma",
+        ]
+    )
+    hro_names = iter(
+        [
+            "Hannah", "Harvey", "Hazel", "Hugo", "Holly",
+            "Hector", "Heidi", "Hope", "Hank", "Hilda",
+            "Jack", "Jane", "Jasper", "Joan", "Jude",
+            "Kara", "Kevin", "Kyra", "Liam", "Lena",
+        ]
+    )
+
+    itso_head_name = next(itso_names)
+    itso_head = User(
+        name=itso_head_name,
+        email=f"{itso_head_name.lower()}@university.edu",
+        dept_id=itso.id,
+        dept_level_id=itso_levels[1].id,
+    )
+    hro_head_name = next(hro_names)
+    hro_head = User(
+        name=hro_head_name,
+        email=f"{hro_head_name.lower()}@university.edu",
+        dept_id=hro.id,
+        dept_level_id=hro_levels[1].id,
+    )
+    session.add_all([itso_head, hro_head])
+    session.flush()
+
+    itso_users: list[User] = [itso_head]
+    itso_users += _build_team(
+        session,
+        dept=itso,
+        team=itso_infra,
+        level_by_rank=itso_levels,
+        composition=[(2, 1), (3, 1), (4, 2), (5, 3), (6, 3)],
+        names=itso_names,
+        head=itso_head,
+    )
+    itso_users += _build_team(
+        session,
+        dept=itso,
+        team=itso_apps,
+        level_by_rank=itso_levels,
+        composition=[(2, 1), (3, 1), (4, 2), (5, 3), (6, 3)],
+        names=itso_names,
+        head=itso_head,
+    )
+    itso_users += _build_team(
+        session,
+        dept=itso,
+        team=itso_svc,
+        level_by_rank=itso_levels,
+        composition=[(2, 1), (3, 1), (4, 2), (5, 2), (6, 3)],
+        names=itso_names,
+        head=itso_head,
+    )
+
+    hro_users: list[User] = [hro_head]
+    hro_users += _build_team(
+        session,
+        dept=hro,
+        team=hro_recruitment,
+        level_by_rank=hro_levels,
+        composition=[(2, 1), (3, 1), (5, 4), (6, 4)],
+        names=hro_names,
+        head=hro_head,
+    )
+    hro_users += _build_team(
+        session,
+        dept=hro,
+        team=hro_operations,
+        level_by_rank=hro_levels,
+        composition=[(2, 1), (3, 1), (5, 3), (6, 4)],
+        names=hro_names,
+        head=hro_head,
+    )
+
+    session.add_all(
+        [
+            DepartmentFallbackRule(
+                dept_id=itso.id,
+                fallback_user_id=hro_head.id,
+                fallback_label="HRO Department Head",
+            ),
+            DepartmentFallbackRule(
+                dept_id=hro.id,
+                fallback_user_id=itso_head.id,
+                fallback_label="ITSO Department Head",
+            ),
+        ]
+    )
+
+    annual_leave = actions["annual_leave"]
+    sick_leave = actions["sick_leave"]
+    training_request = actions["training_request"]
+    session.add_all(
+        [
+            ActionRoutingRule(
+                action_id=annual_leave.id,
+                dept_id=itso.id,
+                requires_primary=True,
+                requires_second_level=True,
+            ),
+            ActionRoutingRule(
+                action_id=sick_leave.id,
+                dept_id=itso.id,
+                requires_primary=True,
+                requires_second_level=False,
+            ),
+            ActionRoutingRule(
+                action_id=training_request.id,
+                dept_id=itso.id,
+                requires_primary=True,
+                requires_second_level=False,
+            ),
+            ActionRoutingRule(
+                action_id=annual_leave.id,
+                dept_id=hro.id,
+                requires_primary=True,
+                requires_second_level=False,
+            ),
+            ActionRoutingRule(
+                action_id=sick_leave.id,
+                dept_id=hro.id,
+                requires_primary=True,
+                requires_second_level=True,
+            ),
+            ActionRoutingRule(
+                action_id=training_request.id,
+                dept_id=hro.id,
+                requires_primary=True,
+                requires_second_level=False,
+            ),
+        ]
+    )
+    session.flush()
+
+    return {
+        "itso": itso,
+        "hro": hro,
+        "itso_infra": itso_infra,
+        "itso_apps": itso_apps,
+        "itso_svc": itso_svc,
+        "hro_recruitment": hro_recruitment,
+        "hro_operations": hro_operations,
+        "itso_levels": itso_levels,
+        "hro_levels": hro_levels,
+        "itso_head": itso_head,
+        "hro_head": hro_head,
+        "itso_users": itso_users,
+        "hro_users": hro_users,
+    }
+
+
 def seed_sample_data(session: Session) -> dict[str, Any]:
     """Populate the database with Finance + HR sample data for the POC."""
     finance = Department(name="Finance", code="FIN")
@@ -376,9 +680,18 @@ def seed_sample_data(session: Session) -> dict[str, Any]:
         ]
     )
 
+    extended = _seed_itso_hro_departments(
+        session,
+        {
+            "annual_leave": annual_leave,
+            "sick_leave": sick_leave,
+            "training_request": training_request,
+        },
+    )
+
     session.commit()
 
-    return {
+    result: dict[str, Any] = {
         "finance": finance,
         "hr": hr,
         "finance_team": finance_team,
@@ -405,3 +718,5 @@ def seed_sample_data(session: Session) -> dict[str, Any]:
         "finance_team_plan": finance_team_plan,
         "project_transform": project_transform,
     }
+    result.update(extended)
+    return result
