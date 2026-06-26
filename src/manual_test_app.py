@@ -56,6 +56,15 @@ _SessionFactory = None
 # always show the full sample organisation.
 _EXPECTED_SEED_DEPARTMENTS = frozenset({"FIN", "HR", "ITSO", "HRO"})
 
+# Level ranks the sample data is expected to seed per department. A persisted
+# database created by an older build may still carry stale ranks (e.g. ITSO/HRO
+# levels before they were shifted to the global rank scheme), in which case it is
+# re-seeded so the diagrams always reflect the current ranks.
+_EXPECTED_DEPT_LEVEL_RANKS = {
+    "ITSO": frozenset({4, 5, 6, 7, 8, 9}),
+    "HRO": frozenset({4, 5, 6, 8, 9}),
+}
+
 
 def _get_engine():
     global _engine, _SessionFactory
@@ -80,9 +89,26 @@ def _get_engine():
 
 
 def _seed_is_complete(session: Session) -> bool:
-    """Return True if every expected sample department exists in *session*."""
+    """Return True if the persisted sample organisation is up to date.
+
+    Checks both that every expected sample department exists and that the
+    ITSO/HRO departments carry the current expected level ranks, so a database
+    seeded by an older build (e.g. with stale ITSO/HRO ranks) is re-seeded.
+    """
     existing = {code for (code,) in session.query(Department.code).all()}
-    return _EXPECTED_SEED_DEPARTMENTS.issubset(existing)
+    if not _EXPECTED_SEED_DEPARTMENTS.issubset(existing):
+        return False
+    for code, expected_ranks in _EXPECTED_DEPT_LEVEL_RANKS.items():
+        ranks = {
+            rank
+            for (rank,) in session.query(DeptLevel.level_rank)
+            .join(Department, DeptLevel.dept_id == Department.id)
+            .filter(Department.code == code)
+            .all()
+        }
+        if not expected_ranks.issubset(ranks):
+            return False
+    return True
 
 
 def _reseed_engine() -> None:

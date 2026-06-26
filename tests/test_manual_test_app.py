@@ -642,3 +642,58 @@ def test_stale_persisted_db_missing_seed_departments_is_reseeded(tmp_path, monke
     assert app._EXPECTED_SEED_DEPARTMENTS.issubset(
         {department["code"] for department in payload["departments"]}
     )
+
+
+def test_stale_persisted_db_with_old_itso_hro_ranks_is_reseeded(tmp_path, monkeypatch):
+    """A persisted DB whose ITSO/HRO levels still carry the old (pre-shift) ranks
+    is re-seeded so diagrams reflect the current rank scheme."""
+    import src.manual_test_app as app
+    from src.database import create_engine_sqlite, init_db
+    from sqlalchemy.orm import sessionmaker
+    from src.models import Department, DeptLevel, User
+
+    db_path = tmp_path / "stale_ranks.db"
+
+    # Build a stale database that has all expected departments, but with the old
+    # ITSO/HRO ranks (1-based) from before they were shifted to the global scheme.
+    engine = create_engine_sqlite(str(db_path))
+    init_db(engine)
+    session = sessionmaker(bind=engine)()
+    for code, name, top_rank in (
+        ("FIN", "Finance", 4),
+        ("HR", "Human Resources", 4),
+        ("ITSO", "Information Technology Services Office", 1),
+        ("HRO", "Human Resources Office", 1),
+    ):
+        dept = Department(name=name, code=code)
+        session.add(dept)
+        session.flush()
+        level = DeptLevel(
+            dept_id=dept.id, level_rank=top_rank, level_name="Head", is_top_level=True
+        )
+        session.add(level)
+        session.flush()
+        session.add(
+            User(
+                name=f"{code} Head",
+                email=f"{code.lower()}@university.edu",
+                dept_id=dept.id,
+                dept_level_id=level.id,
+            )
+        )
+    session.commit()
+    session.close()
+    engine.dispose()
+
+    # Point the app at the stale database and force a fresh engine load.
+    monkeypatch.setattr(app, "_DB_PATH", str(db_path))
+    monkeypatch.setattr(app, "_engine", None)
+    monkeypatch.setattr(app, "_SessionFactory", None)
+
+    payload = app.get_seed_data()
+    itso_ranks = {
+        level["level_rank"]
+        for level in payload["dept_levels"]
+        if level["dept_name"] == "Information Technology Services Office"
+    }
+    assert app._EXPECTED_DEPT_LEVEL_RANKS["ITSO"].issubset(itso_ranks)
