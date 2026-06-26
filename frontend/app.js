@@ -53,6 +53,9 @@ document.querySelectorAll(".tab-btn").forEach((btn) => {
     if (target === "seed-editor") {
       loadSeedData();
     }
+    if (target === "scenario-lab" && bootstrap) {
+      initScenarioLab();
+    }
   });
 });
 
@@ -228,6 +231,11 @@ async function loadBootstrap() {
       ...bootstrap.departments.map((d) => createOption(d.code, `${d.name} (${d.code})`))
     );
   });
+  // Diagram supports an extra "All Departments" combined view.
+  deptSelectDiagram.insertBefore(
+    createOption("ALL", "All Departments"),
+    deptSelectDiagram.firstChild
+  );
 
   const requesterSelect = document.querySelector("#requester-select");
   const editorSelect = document.querySelector("#editor-select");
@@ -311,16 +319,7 @@ const LEFT_PAD = 60;
 const TOP_PAD = 40;
 const LEVEL_LABEL_X = 8;
 
-function renderDiagram(departmentCode) {
-  if (!bootstrap) return;
-  const chart = bootstrap.org_charts[departmentCode];
-  if (!chart) return;
-
-  const svg = document.getElementById("diagram-svg");
-  svg.innerHTML = "";  // clear
-
-  // Collect all users from chart
-  const users = [];
+function collectChartUsers(chart, users) {
   chart.org_units.forEach((ou) => {
     ou.members.forEach((m) => {
       if (!users.find((u) => u.id === m.id)) users.push({ ...m, org_unit: ou.name });
@@ -329,6 +328,23 @@ function renderDiagram(departmentCode) {
   chart.unassigned_users.forEach((u) => {
     if (!users.find((ex) => ex.id === u.id)) users.push({ ...u, org_unit: null });
   });
+}
+
+function renderDiagram(departmentCode) {
+  if (!bootstrap) return;
+
+  const svg = document.getElementById("diagram-svg");
+  svg.innerHTML = "";  // clear
+
+  // Collect users from a single department chart or all of them.
+  const users = [];
+  if (departmentCode === "ALL") {
+    Object.values(bootstrap.org_charts).forEach((chart) => collectChartUsers(chart, users));
+  } else {
+    const chart = bootstrap.org_charts[departmentCode];
+    if (!chart) return;
+    collectChartUsers(chart, users);
+  }
 
   // Group by level_rank
   const levelMap = {};
@@ -435,7 +451,10 @@ function renderDiagram(departmentCode) {
     nameText.setAttribute("x", NODE_W / 2);
     nameText.setAttribute("y", 18);
     nameText.setAttribute("class", "node-name");
-    nameText.textContent = u.name + (u.is_team_lead ? " ★" : "");
+    nameText.textContent =
+      u.name +
+      (departmentCode === "ALL" && u.department_code ? ` [${u.department_code}]` : "") +
+      (u.is_team_lead ? " ★" : "");
     g.appendChild(nameText);
 
     // Level
@@ -662,7 +681,10 @@ function renderLevelsTable(levels) {
         <td><input type="number" class="cell-input" data-field="level_rank" data-id="${lv.id}" value="${lv.level_rank}" style="width:5rem" /></td>
         <td><input class="cell-input" data-field="level_name" data-id="${lv.id}" value="${escHtml(lv.level_name)}" /></td>
         <td><input type="checkbox" class="cell-check" data-field="is_top_level" data-id="${lv.id}" ${lv.is_top_level ? "checked" : ""} /></td>
-        <td><button type="button" class="btn-small save-level-btn" data-id="${lv.id}">Save</button></td>
+        <td>
+          <button type="button" class="btn-small save-level-btn" data-id="${lv.id}">Save</button>
+          <button type="button" class="btn-small btn-danger delete-level-btn" data-id="${lv.id}">Remove</button>
+        </td>
       `;
       return tr;
     })
@@ -687,6 +709,20 @@ function renderLevelsTable(levels) {
       const result = await resp.json();
       if (!resp.ok) {
         alert(result.error || "Error saving level");
+        return;
+      }
+      await refreshAll();
+    });
+  });
+
+  tbody.querySelectorAll(".delete-level-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!confirm("Remove this level?")) return;
+      const id = Number(btn.dataset.id);
+      const resp = await fetch(`/api/dept-levels/${id}`, { method: "DELETE" });
+      const result = await resp.json();
+      if (!resp.ok) {
+        alert(result.error || "Error removing level");
         return;
       }
       await refreshAll();
@@ -825,10 +861,55 @@ function renderActionsTable(actions) {
   tbody.replaceChildren(
     ...actions.map((a) => {
       const tr = document.createElement("tr");
-      tr.innerHTML = `<td>${a.id}</td><td>${escHtml(a.name)}</td><td>${escHtml(a.code)}</td><td>${a.is_project_scoped ? "✓" : ""}</td>`;
+      tr.innerHTML = `
+        <td>${a.id}</td>
+        <td><input class="cell-input" data-field="name" data-id="${a.id}" value="${escHtml(a.name)}" /></td>
+        <td><input class="cell-input" data-field="code" data-id="${a.id}" value="${escHtml(a.code)}" /></td>
+        <td><input type="checkbox" class="cell-check" data-field="is_project_scoped" data-id="${a.id}" ${a.is_project_scoped ? "checked" : ""} /></td>
+        <td>
+          <button type="button" class="btn-small save-action-btn" data-id="${a.id}">Save</button>
+          <button type="button" class="btn-small btn-danger delete-action-btn" data-id="${a.id}">Remove</button>
+        </td>
+      `;
       return tr;
     })
   );
+
+  tbody.querySelectorAll(".save-action-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = Number(btn.dataset.id);
+      const row = btn.closest("tr");
+      const body = {};
+      row.querySelectorAll("[data-field]").forEach((el) => {
+        body[el.dataset.field] = el.type === "checkbox" ? el.checked : el.value;
+      });
+      const resp = await fetch(`/api/actions/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const result = await resp.json();
+      if (!resp.ok) {
+        alert(result.error || "Error saving action");
+        return;
+      }
+      await refreshAll();
+    });
+  });
+
+  tbody.querySelectorAll(".delete-action-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!confirm("Remove this action (and its routing rules)?")) return;
+      const id = Number(btn.dataset.id);
+      const resp = await fetch(`/api/actions/${id}`, { method: "DELETE" });
+      const result = await resp.json();
+      if (!resp.ok) {
+        alert(result.error || "Error removing action");
+        return;
+      }
+      await refreshAll();
+    });
+  });
 }
 
 function renderDepartmentsTable(depts) {
@@ -836,10 +917,54 @@ function renderDepartmentsTable(depts) {
   tbody.replaceChildren(
     ...depts.map((d) => {
       const tr = document.createElement("tr");
-      tr.innerHTML = `<td>${d.id}</td><td>${escHtml(d.name)}</td><td>${escHtml(d.code)}</td>`;
+      tr.innerHTML = `
+        <td>${d.id}</td>
+        <td><input class="cell-input" data-field="name" data-id="${d.id}" value="${escHtml(d.name)}" /></td>
+        <td><input class="cell-input" data-field="code" data-id="${d.id}" value="${escHtml(d.code)}" /></td>
+        <td>
+          <button type="button" class="btn-small save-dept-btn" data-id="${d.id}">Save</button>
+          <button type="button" class="btn-small btn-danger delete-dept-btn" data-id="${d.id}">Remove</button>
+        </td>
+      `;
       return tr;
     })
   );
+
+  tbody.querySelectorAll(".save-dept-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = Number(btn.dataset.id);
+      const row = btn.closest("tr");
+      const body = {};
+      row.querySelectorAll("[data-field]").forEach((el) => {
+        body[el.dataset.field] = el.value;
+      });
+      const resp = await fetch(`/api/departments/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const result = await resp.json();
+      if (!resp.ok) {
+        alert(result.error || "Error saving department");
+        return;
+      }
+      await refreshAll();
+    });
+  });
+
+  tbody.querySelectorAll(".delete-dept-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!confirm("Remove this department (and its levels and org units)?")) return;
+      const id = Number(btn.dataset.id);
+      const resp = await fetch(`/api/departments/${id}`, { method: "DELETE" });
+      const result = await resp.json();
+      if (!resp.ok) {
+        alert(result.error || "Error removing department");
+        return;
+      }
+      await refreshAll();
+    });
+  });
 }
 
 function renderOrgUnitsTable(units) {
@@ -847,10 +972,63 @@ function renderOrgUnitsTable(units) {
   tbody.replaceChildren(
     ...units.map((ou) => {
       const tr = document.createElement("tr");
-      tr.innerHTML = `<td>${ou.id}</td><td>${escHtml(ou.dept_name)}</td><td>${escHtml(ou.name)}</td><td>${escHtml(ou.code)}</td>`;
+      tr.innerHTML = `
+        <td>${ou.id}</td>
+        <td>${escHtml(ou.dept_name)}</td>
+        <td><input class="cell-input" data-field="name" data-id="${ou.id}" value="${escHtml(ou.name)}" /></td>
+        <td><input class="cell-input" data-field="code" data-id="${ou.id}" value="${escHtml(ou.code)}" /></td>
+        <td>
+          <button type="button" class="btn-small save-ou-btn" data-id="${ou.id}">Save</button>
+          <button type="button" class="btn-small btn-danger delete-ou-btn" data-id="${ou.id}">Remove</button>
+        </td>
+      `;
       return tr;
     })
   );
+
+  tbody.querySelectorAll(".save-ou-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = Number(btn.dataset.id);
+      const row = btn.closest("tr");
+      const body = {};
+      row.querySelectorAll("[data-field]").forEach((el) => {
+        body[el.dataset.field] = el.value;
+      });
+      const resp = await fetch(`/api/org-units/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const result = await resp.json();
+      if (!resp.ok) {
+        alert(result.error || "Error saving org unit");
+        return;
+      }
+      await refreshAll();
+    });
+  });
+
+  tbody.querySelectorAll(".delete-ou-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!confirm("Remove this org unit?")) return;
+      const id = Number(btn.dataset.id);
+      const resp = await fetch(`/api/org-units/${id}`, { method: "DELETE" });
+      const result = await resp.json();
+      if (!resp.ok) {
+        alert(result.error || "Error removing org unit");
+        return;
+      }
+      await refreshAll();
+    });
+  });
+
+  // Populate department selects used by the add-level / add-org-unit forms.
+  const depts = seedData ? seedData.departments : [];
+  const deptOptionEls = depts.map((d) => createOption(d.id, `${d.name} (${d.code})`));
+  const newLevelDept = document.getElementById("new-level-dept");
+  const newOuDept = document.getElementById("new-ou-dept");
+  if (newLevelDept) newLevelDept.replaceChildren(...deptOptionEls.map((o) => o.cloneNode(true)));
+  if (newOuDept) newOuDept.replaceChildren(...deptOptionEls.map((o) => o.cloneNode(true)));
 }
 
 // Add new user
@@ -917,6 +1095,121 @@ document.getElementById("reset-seed-btn").addEventListener("click", async () => 
   await refreshAll();
 });
 
+// Generic add-form toggle wiring
+function wireAddForm(toggleId, formId, cancelId) {
+  document.getElementById(toggleId).addEventListener("click", () => {
+    document.getElementById(formId).classList.remove("hidden");
+  });
+  document.getElementById(cancelId).addEventListener("click", () => {
+    document.getElementById(formId).classList.add("hidden");
+  });
+}
+
+wireAddForm("add-level-btn", "add-level-form", "cancel-new-level-btn");
+wireAddForm("add-action-btn", "add-action-form", "cancel-new-action-btn");
+wireAddForm("add-dept-btn", "add-dept-form", "cancel-new-dept-btn");
+wireAddForm("add-ou-btn", "add-ou-form", "cancel-new-ou-btn");
+
+// Add new level
+document.getElementById("save-new-level-btn").addEventListener("click", async () => {
+  const errEl = document.getElementById("new-level-error");
+  hideError(errEl);
+  const deptId = Number(document.getElementById("new-level-dept").value);
+  const rank = Number(document.getElementById("new-level-rank").value);
+  const name = document.getElementById("new-level-name").value.trim();
+  const isTop = document.getElementById("new-level-top").checked;
+  if (!deptId || !name || Number.isNaN(rank)) {
+    showError(errEl, "Department, rank and level name are required.");
+    return;
+  }
+  const resp = await fetch("/api/dept-levels", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dept_id: deptId, level_rank: rank, level_name: name, is_top_level: isTop }),
+  });
+  const result = await resp.json();
+  if (!resp.ok) {
+    showError(errEl, result.error || "Error creating level");
+    return;
+  }
+  document.getElementById("add-level-form").classList.add("hidden");
+  await refreshAll();
+});
+
+// Add new action
+document.getElementById("save-new-action-btn").addEventListener("click", async () => {
+  const errEl = document.getElementById("new-action-error");
+  hideError(errEl);
+  const name = document.getElementById("new-action-name").value.trim();
+  const code = document.getElementById("new-action-code").value.trim();
+  const projectScoped = document.getElementById("new-action-project").checked;
+  if (!name || !code) {
+    showError(errEl, "Name and code are required.");
+    return;
+  }
+  const resp = await fetch("/api/actions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, code, is_project_scoped: projectScoped }),
+  });
+  const result = await resp.json();
+  if (!resp.ok) {
+    showError(errEl, result.error || "Error creating action");
+    return;
+  }
+  document.getElementById("add-action-form").classList.add("hidden");
+  await refreshAll();
+});
+
+// Add new department
+document.getElementById("save-new-dept-btn").addEventListener("click", async () => {
+  const errEl = document.getElementById("new-dept-error");
+  hideError(errEl);
+  const name = document.getElementById("new-dept-name").value.trim();
+  const code = document.getElementById("new-dept-code").value.trim();
+  if (!name || !code) {
+    showError(errEl, "Name and code are required.");
+    return;
+  }
+  const resp = await fetch("/api/departments", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, code }),
+  });
+  const result = await resp.json();
+  if (!resp.ok) {
+    showError(errEl, result.error || "Error creating department");
+    return;
+  }
+  document.getElementById("add-dept-form").classList.add("hidden");
+  await refreshAll();
+});
+
+// Add new org unit
+document.getElementById("save-new-ou-btn").addEventListener("click", async () => {
+  const errEl = document.getElementById("new-ou-error");
+  hideError(errEl);
+  const deptId = Number(document.getElementById("new-ou-dept").value);
+  const name = document.getElementById("new-ou-name").value.trim();
+  const code = document.getElementById("new-ou-code").value.trim();
+  if (!deptId || !name || !code) {
+    showError(errEl, "Department, name and code are required.");
+    return;
+  }
+  const resp = await fetch("/api/org-units", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dept_id: deptId, name, code }),
+  });
+  const result = await resp.json();
+  if (!resp.ok) {
+    showError(errEl, result.error || "Error creating org unit");
+    return;
+  }
+  document.getElementById("add-ou-form").classList.add("hidden");
+  await refreshAll();
+});
+
 // ---------------------------------------------------------------------------
 // Refresh: reload bootstrap + seed data + re-render diagram
 // ---------------------------------------------------------------------------
@@ -964,6 +1257,157 @@ function escHtml(str) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+// ---------------------------------------------------------------------------
+// Scenario Lab
+// ---------------------------------------------------------------------------
+let scenarioLabReady = false;
+
+function userOptionEls() {
+  const users = bootstrap ? bootstrap.users : [];
+  return users.map((u) =>
+    createOption(u.id, `${u.name} — ${u.department_code} / ${u.level_name}`)
+  );
+}
+
+function addOverlayRow() {
+  const container = document.getElementById("lab-overlays");
+  const overlayTypes = bootstrap ? bootstrap.overlay_simulations : [];
+  const policies = bootstrap ? bootstrap.handover_policies : [];
+
+  const row = document.createElement("div");
+  row.className = "overlay-row";
+
+  const typeSel = document.createElement("select");
+  typeSel.className = "overlay-type";
+  typeSel.replaceChildren(...overlayTypes.map((o) => createOption(o.type, o.label)));
+
+  const ownerSel = document.createElement("select");
+  ownerSel.className = "overlay-owner";
+  ownerSel.replaceChildren(...userOptionEls());
+
+  const subSel = document.createElement("select");
+  subSel.className = "overlay-substitute";
+  subSel.replaceChildren(...userOptionEls());
+
+  const policySel = document.createElement("select");
+  policySel.className = "overlay-policy";
+  policySel.replaceChildren(...policies.map((p) => createOption(p, p)));
+
+  const removeBtn = document.createElement("button");
+  removeBtn.type = "button";
+  removeBtn.className = "btn-small btn-danger";
+  removeBtn.textContent = "✕";
+  removeBtn.addEventListener("click", () => row.remove());
+
+  const ownerLabel = document.createElement("label");
+  ownerLabel.className = "overlay-owner-label";
+  const subLabel = document.createElement("label");
+  subLabel.className = "overlay-sub-label";
+  const policyLabel = document.createElement("label");
+  policyLabel.textContent = "Policy";
+  policyLabel.appendChild(policySel);
+
+  function syncLabels() {
+    const meta = overlayTypes.find((o) => o.type === typeSel.value) || {};
+    ownerLabel.firstChild && ownerLabel.firstChild.remove();
+    ownerLabel.insertBefore(
+      document.createTextNode(meta.owner_label || "Authority owner"),
+      ownerSel
+    );
+    subLabel.firstChild && subLabel.firstChild.remove();
+    subLabel.insertBefore(
+      document.createTextNode(meta.substitute_label || "Substitute"),
+      subSel
+    );
+    policyLabel.classList.toggle("hidden", typeSel.value !== "handover");
+  }
+  ownerLabel.appendChild(ownerSel);
+  subLabel.appendChild(subSel);
+  typeSel.addEventListener("change", syncLabels);
+
+  const typeLabel = document.createElement("label");
+  typeLabel.textContent = "Overlay type";
+  typeLabel.appendChild(typeSel);
+
+  row.append(typeLabel, ownerLabel, subLabel, policyLabel, removeBtn);
+  container.appendChild(row);
+  syncLabels();
+}
+
+function initScenarioLab() {
+  const requesterSel = document.getElementById("lab-requester");
+  const actionSel = document.getElementById("lab-action");
+  if (requesterSel) requesterSel.replaceChildren(...userOptionEls());
+  if (actionSel) {
+    actionSel.replaceChildren(
+      ...bootstrap.actions.map((a) => createOption(a.code, a.name))
+    );
+  }
+  if (!scenarioLabReady) {
+    document
+      .getElementById("lab-add-overlay-btn")
+      .addEventListener("click", addOverlayRow);
+    document
+      .getElementById("scenario-lab-form")
+      .addEventListener("submit", runScenarioLab);
+    addOverlayRow();
+    scenarioLabReady = true;
+  }
+}
+
+async function runScenarioLab(event) {
+  event.preventDefault();
+  const requesterId = Number(document.getElementById("lab-requester").value);
+  const actionCode = document.getElementById("lab-action").value;
+  const requestAtRaw = document.getElementById("lab-request-at").value;
+  const projectCode = document.getElementById("lab-project-code").value.trim();
+
+  const overlays = [];
+  document.querySelectorAll("#lab-overlays .overlay-row").forEach((row) => {
+    const type = row.querySelector(".overlay-type").value;
+    const overlay = {
+      type,
+      owner_id: Number(row.querySelector(".overlay-owner").value),
+      substitute_id: Number(row.querySelector(".overlay-substitute").value),
+    };
+    if (type === "handover") {
+      overlay.policy = row.querySelector(".overlay-policy").value;
+    }
+    overlays.push(overlay);
+  });
+
+  const resp = await fetch("/api/simulate-overlay", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      requester_id: requesterId,
+      action_code: actionCode,
+      overlays,
+      request_at: requestAtRaw ? `${requestAtRaw}:00+00:00` : null,
+      project_code: projectCode || null,
+    }),
+  });
+  const result = await resp.json();
+  const summaryEl = document.getElementById("lab-result-summary");
+  const outputEl = document.getElementById("lab-output");
+  outputEl.textContent = renderPrettyJson(result);
+
+  if (result.status !== "success") {
+    summaryEl.innerHTML = `<span class="lab-error">${escHtml(result.error || "Simulation failed")}</span>`;
+    return;
+  }
+  const primary = result.primary_approver
+    ? `${escHtml(result.primary_approver)} <span class="lab-source">(${escHtml(result.primary_source || "")})</span>`
+    : "— none —";
+  const second = result.second_level_approver
+    ? `${escHtml(result.second_level_approver)} <span class="lab-source">(${escHtml(result.second_level_source || "")})</span>`
+    : "— none —";
+  summaryEl.innerHTML = `
+    <div class="lab-line"><span class="lab-label">Primary level:</span> ${primary}</div>
+    <div class="lab-line"><span class="lab-label">Second level:</span> ${second}</div>
+  `;
 }
 
 // ---------------------------------------------------------------------------

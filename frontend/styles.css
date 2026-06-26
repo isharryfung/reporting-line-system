@@ -507,3 +507,55 @@ th {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Scenario Lab
+   --------------------------------------------------------------------------- */
+.overlay-row {
+  align-items: flex-end;
+  background: #f5f8fc;
+  border: 1px solid #d8e2f0;
+  border-radius: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 0.6rem;
+  padding: 0.6rem;
+}
+
+.overlay-row label {
+  display: flex;
+  flex: 1 1 140px;
+  flex-direction: column;
+  font-size: 0.85rem;
+  gap: 0.2rem;
+}
+
+.lab-summary {
+  background: #f0f6ff;
+  border: 1px solid #cdddf2;
+  border-radius: 8px;
+  margin-bottom: 0.75rem;
+  padding: 0.85rem 1rem;
+}
+
+.lab-line {
+  font-size: 1.05rem;
+  margin: 0.25rem 0;
+}
+
+.lab-label {
+  color: #466089;
+  font-weight: 600;
+  margin-right: 0.4rem;
+}
+
+.lab-source {
+  color: #7787a0;
+  font-size: 0.85rem;
+}
+
+.lab-error {
+  color: #b3261e;
+  font-weight: 600;
+}

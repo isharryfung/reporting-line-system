@@ -4,14 +4,26 @@ from src.manual_test_app import (
     ADVANCED_SCENARIOS,
     BUSINESS_CASES,
     _reset_database,
+    api_create_action,
+    api_create_department,
+    api_create_dept_level,
+    api_create_org_unit,
     api_create_reporting_line,
     api_create_user,
+    api_delete_action,
+    api_delete_department,
+    api_delete_dept_level,
+    api_delete_org_unit,
+    api_update_action,
+    api_update_department,
     api_update_diagram_node,
+    api_update_org_unit,
     api_update_user,
     build_bootstrap_payload,
     get_seed_data,
     simulate_action_request,
     simulate_advanced_scenario,
+    simulate_scenario_overlay,
     simulate_team_lead_permission,
 )
 
@@ -220,4 +232,191 @@ def test_scenario_builder_uses_updated_data_after_diagram_edit():
     # After edit: Peter → Nina → Fiona
     after = simulate_action_request(peter["id"], "annual_leave")
     assert after["steps"][0]["approver"] == "Nina"
+
+
+# ---------------------------------------------------------------------------
+# Seed Data Editor CRUD: departments, actions, org units, levels
+# ---------------------------------------------------------------------------
+
+def test_department_create_update_delete():
+    created, status = api_create_department({"name": "Library", "code": "LIB"})
+    assert status == 201
+    dept_id = created["department"]["id"]
+    assert any(d["code"] == "LIB" for d in get_seed_data()["departments"])
+
+    updated, status = api_update_department(dept_id, {"name": "Library Services"})
+    assert status == 200
+    assert updated["department"]["name"] == "Library Services"
+
+    deleted, status = api_delete_department(dept_id)
+    assert status == 200
+    assert not any(d["code"] == "LIB" for d in get_seed_data()["departments"])
+
+
+def test_department_delete_blocked_when_users_exist():
+    fin = next(d for d in get_seed_data()["departments"] if d["code"] == "FIN")
+    result, status = api_delete_department(fin["id"])
+    assert status == 400
+    assert "user" in result["error"].lower()
+
+
+def test_department_create_rejects_duplicate_code():
+    result, status = api_create_department({"name": "Finance Two", "code": "FIN"})
+    assert status == 400
+    assert "code" in result["error"].lower()
+
+
+def test_action_create_update_delete():
+    created, status = api_create_action(
+        {"name": "Overtime", "code": "overtime", "is_project_scoped": False}
+    )
+    assert status == 201
+    action_id = created["action"]["id"]
+
+    updated, status = api_update_action(action_id, {"is_project_scoped": True})
+    assert status == 200
+    assert updated["action"]["is_project_scoped"] is True
+
+    deleted, status = api_delete_action(action_id)
+    assert status == 200
+    assert not any(a["code"] == "overtime" for a in get_seed_data()["actions"])
+
+
+def test_org_unit_create_update_delete():
+    fin = next(d for d in get_seed_data()["departments"] if d["code"] == "FIN")
+    created, status = api_create_org_unit(
+        {"dept_id": fin["id"], "name": "Treasury Desk", "code": "FIN-TREAS"}
+    )
+    assert status == 201
+    org_unit_id = created["org_unit"]["id"]
+
+    updated, status = api_update_org_unit(org_unit_id, {"name": "Treasury"})
+    assert status == 200
+    assert updated["org_unit"]["name"] == "Treasury"
+
+    # No members assigned, so deletion should succeed.
+    deleted, status = api_delete_org_unit(org_unit_id)
+    assert status == 200
+
+
+def test_dept_level_create_and_delete():
+    fin = next(d for d in get_seed_data()["departments"] if d["code"] == "FIN")
+    created, status = api_create_dept_level(
+        {"dept_id": fin["id"], "level_rank": 7, "level_name": "Assistant Manager"}
+    )
+    assert status == 201
+    level_id = created["dept_level"]["id"]
+    assert any(lv["id"] == level_id for lv in get_seed_data()["dept_levels"])
+
+    deleted, status = api_delete_dept_level(level_id)
+    assert status == 200
+    assert not any(lv["id"] == level_id for lv in get_seed_data()["dept_levels"])
+
+
+def test_dept_level_delete_blocked_when_user_assigned():
+    seed = get_seed_data()
+    peter = next(u for u in seed["users"] if u["name"] == "Peter")
+    result, status = api_delete_dept_level(peter["dept_level_id"])
+    assert status == 400
+    assert "user" in result["error"].lower()
+
+
+# ---------------------------------------------------------------------------
+# Scenario Lab: ephemeral overlay simulation
+# ---------------------------------------------------------------------------
+
+def _user_ids():
+    return {u["name"]: u["id"] for u in build_bootstrap_payload()["users"]}
+
+
+def test_simulate_overlay_delegation_resolves_primary_and_second_level():
+    ids = _user_ids()
+    result = simulate_scenario_overlay(
+        requester_id=ids["Peter"],
+        action_code="annual_leave",
+        overlays=[
+            {"type": "delegation", "owner_id": ids["Mary"], "substitute_id": ids["Nina"]}
+        ],
+    )
+    assert result["status"] == "success"
+    assert result["primary_approver"] == "Nina"
+    assert result["primary_source"] == "delegation"
+    assert result["second_level_approver"] == "Fiona"
+
+
+def test_simulate_overlay_acting_replaces_primary_approver():
+    ids = _user_ids()
+    result = simulate_scenario_overlay(
+        requester_id=ids["Peter"],
+        action_code="sick_leave",
+        overlays=[
+            {"type": "acting", "owner_id": ids["Mary"], "substitute_id": ids["Nina"]}
+        ],
+    )
+    assert result["status"] == "success"
+    assert result["primary_approver"] == "Nina"
+    assert result["primary_source"] == "acting"
+
+
+def test_simulate_overlay_handover_both_required_keeps_both_approvers():
+    ids = _user_ids()
+    result = simulate_scenario_overlay(
+        requester_id=ids["Peter"],
+        action_code="sick_leave",
+        overlays=[
+            {
+                "type": "handover",
+                "owner_id": ids["Mary"],
+                "substitute_id": ids["Nina"],
+                "policy": "both_required",
+            }
+        ],
+    )
+    assert result["status"] == "success"
+    approvers = [step["approver"] for step in result["steps"]]
+    assert "Mary" in approvers and "Nina" in approvers
+
+
+def test_simulate_overlay_does_not_persist_overlays():
+    """Scenario Lab overlays must not mutate persisted POC state."""
+    ids = _user_ids()
+    simulate_scenario_overlay(
+        requester_id=ids["Peter"],
+        action_code="annual_leave",
+        overlays=[
+            {"type": "delegation", "owner_id": ids["Mary"], "substitute_id": ids["Nina"]}
+        ],
+    )
+    # Without the ad-hoc overlay, default annual_leave still routes to Mary.
+    plain = simulate_action_request(ids["Peter"], "annual_leave")
+    assert plain["steps"][0]["approver"] == "Mary"
+
+
+def test_simulate_overlay_with_no_overlays_matches_official_route():
+    ids = _user_ids()
+    result = simulate_scenario_overlay(
+        requester_id=ids["Peter"], action_code="annual_leave", overlays=[]
+    )
+    assert result["status"] == "success"
+    assert result["primary_approver"] == "Mary"
+    assert result["second_level_approver"] == "Fiona"
+
+
+def test_simulate_overlay_rejects_unknown_type():
+    ids = _user_ids()
+    result = simulate_scenario_overlay(
+        requester_id=ids["Peter"],
+        action_code="annual_leave",
+        overlays=[
+            {"type": "bogus", "owner_id": ids["Mary"], "substitute_id": ids["Nina"]}
+        ],
+    )
+    assert result["status"] == "error"
+
+
+def test_bootstrap_exposes_overlay_simulation_metadata():
+    payload = build_bootstrap_payload()
+    types = {o["type"] for o in payload["overlay_simulations"]}
+    assert {"acting", "delegation", "peer_coverage", "handover"} <= types
+    assert "both_required" in payload["handover_policies"]
 

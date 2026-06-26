@@ -175,7 +175,9 @@ restore the original sample data at any time.
 ## Editing the visual diagram
 
 1. Open <http://127.0.0.1:8000> and click the **Diagram Editor** tab.
-2. Select a department from the dropdown (Finance or HR).
+2. Select a department from the dropdown, or choose **All Departments** to view
+   every department in one combined diagram (nodes are tagged with their
+   department code).
 3. The layered SVG diagram shows all users as nodes, with:
    - solid lines representing official primary reporting relationships
    - level numbers on each node (`L4` = Director, `L5` = Senior Manager, `L9` = Officer)
@@ -202,19 +204,26 @@ restore the original sample data at any time.
 2. Select a sub-tab: Users, Levels, Reporting Lines, Routing Rules, Fallback
    Approvers, Actions, Departments, or Org Units.
 3. Edit values inline and click **Save** on the row.
-4. For users and reporting lines you can also add new records using the
-   **+ Add** button above each table.
-5. Click **Reset to default seed data** at the top to restore original values.
+4. Users, Levels, Reporting Lines, Actions, Departments, and Org Units support
+   adding new records via the **+ Add** button above each table, and removing
+   existing records via the **Remove** button on each row.
+5. Deletions are guarded against referential integrity issues: a department with
+   users, a level still assigned to a user, or an org unit with active members
+   cannot be removed.
+6. Click **Reset to default seed data** at the top to restore original values.
 
 ### Entities editable from the UI
 
-| Entity | Editable fields |
-|---|---|
-| Users | name, email, level, active |
-| Department Levels | rank, name, top-level flag |
-| Reporting Lines | add or remove active primary manager relationships |
-| Routing Rules | requires_primary, requires_second_level per action/dept |
-| Fallback Approvers | fallback user and label per department |
+| Entity | Operations | Editable fields |
+|---|---|---|
+| Users | add / edit / deactivate | name, email, level, active |
+| Department Levels | add / edit / remove | department, rank, name, top-level flag |
+| Departments | add / edit / remove | name, code |
+| Actions | add / edit / remove | name, code, project-scoped flag |
+| Org Units | add / edit / remove | department, name, code |
+| Reporting Lines | add / remove | active primary manager relationships |
+| Routing Rules | edit | requires_primary, requires_second_level per action/dept |
+| Fallback Approvers | edit | fallback user and label per department |
 
 ### How seed data edits affect simulation
 
@@ -225,6 +234,28 @@ automatically use the updated state.  Example flow:
    Mary to Nina.
 2. Switch to **Simulation**, select Peter as requester and Annual Leave.
 3. The chain now shows Nina → Fiona instead of Mary → Fiona.
+
+## Scenario Lab (advanced test-case simulator)
+
+The **Scenario Lab** tab lets you construct advanced overlay test cases on top
+of the official reporting line and inspect the resolved approvers, without
+mutating the persisted POC state.
+
+1. Click the **Scenario Lab** tab.
+2. Choose a **Requester** and **Action** (optionally a request date and project
+   code).
+3. Add one or more **overlays**. Each overlay has a type and two participants:
+   - **Acting** — principal whose authority is acted, and the acting approver
+   - **Delegation** — delegator and the delegate approver
+   - **Peer coverage** — covered approver and the coverage approver
+   - **Handover overlap** — outgoing and incoming approver, plus a policy
+     (`old_until_end_date`, `new_from_start_date`, `both_required`,
+     `new_primary_old_observer`)
+4. Click **Run scenario**. The resolved **primary** and **second-level**
+   approvers are highlighted, with the full approval chain shown below.
+5. Overlays defined here are simulated in a rolled-back transaction (via
+   `POST /api/simulate-overlay`) and are never saved, so you can test cases
+   freely.
 
 ## Full business/test case table
 

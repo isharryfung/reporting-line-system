@@ -16,9 +16,13 @@ from src.database import create_engine_sqlite, get_session, init_db
 from src.models import (
     Action,
     ActionRoutingRule,
+    ActingAssignment,
+    CoverageAssignment,
+    DelegationAssignment,
     Department,
     DepartmentFallbackRule,
     DeptLevel,
+    HandoverOverlap,
     OrgUnit,
     OrgUnitMembership,
     ReportingLine,
@@ -372,6 +376,10 @@ def build_bootstrap_payload() -> dict[str, Any]:
             "users": users,
             "business_cases": BUSINESS_CASES,
             "advanced_scenarios": ADVANCED_SCENARIOS,
+            "overlay_simulations": [
+                {"type": key, **meta} for key, meta in OVERLAY_SIMULATIONS.items()
+            ],
+            "handover_policies": HANDOVER_POLICIES,
             "notes": [
                 "Reporting lines drive both approval routing and org chart display.",
                 "Each staff member can have only one active official primary manager.",
@@ -861,6 +869,413 @@ def api_update_dept_level(level_id: int, body: dict[str, Any]) -> tuple[dict[str
         session.close()
 
 
+def api_create_dept_level(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    """Create a new department level."""
+    session = _get_session()
+    try:
+        dept_id = body.get("dept_id")
+        level_rank = body.get("level_rank")
+        level_name = str(body.get("level_name", "")).strip()
+        if dept_id is None or level_rank is None or not level_name:
+            return {"error": "dept_id, level_rank, and level_name are required."}, 400
+
+        dept_id = int(dept_id)
+        level_rank = int(level_rank)
+        if session.get(Department, dept_id) is None:
+            return {"error": f"Department {dept_id} not found."}, 400
+
+        duplicate = (
+            session.query(DeptLevel)
+            .filter(DeptLevel.dept_id == dept_id, DeptLevel.level_rank == level_rank)
+            .first()
+        )
+        if duplicate:
+            return {
+                "error": f"Level rank {level_rank} already exists for this department."
+            }, 400
+
+        level = DeptLevel(
+            dept_id=dept_id,
+            level_rank=level_rank,
+            level_name=level_name,
+            is_top_level=bool(body.get("is_top_level", False)),
+        )
+        session.add(level)
+        session.commit()
+        session.refresh(level)
+        return {
+            "status": "ok",
+            "dept_level": {
+                "id": level.id,
+                "dept_id": level.dept_id,
+                "level_rank": level.level_rank,
+                "level_name": level.level_name,
+                "is_top_level": level.is_top_level,
+            },
+        }, 201
+    except Exception as exc:
+        session.rollback()
+        return {"error": str(exc)}, 500
+    finally:
+        session.close()
+
+
+def api_delete_dept_level(level_id: int) -> tuple[dict[str, Any], int]:
+    """Delete a department level if no users are assigned to it."""
+    session = _get_session()
+    try:
+        level = session.get(DeptLevel, level_id)
+        if level is None:
+            return {"error": f"DeptLevel {level_id} not found."}, 404
+        user_count = session.query(User).filter(User.dept_level_id == level_id).count()
+        if user_count > 0:
+            return {
+                "error": f"Cannot delete level: {user_count} user(s) are assigned to it."
+            }, 400
+        session.delete(level)
+        session.commit()
+        return {"status": "ok"}, 200
+    except Exception as exc:
+        session.rollback()
+        return {"error": str(exc)}, 500
+    finally:
+        session.close()
+
+
+# ---------------------------------------------------------------------------
+# Department CRUD
+# ---------------------------------------------------------------------------
+
+def api_create_department(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    """Create a new department."""
+    session = _get_session()
+    try:
+        name = str(body.get("name", "")).strip()
+        code = str(body.get("code", "")).strip()
+        if not name or not code:
+            return {"error": "name and code are required."}, 400
+        if session.query(Department).filter(Department.code == code).first():
+            return {"error": f"Department code {code!r} is already in use."}, 400
+        if session.query(Department).filter(Department.name == name).first():
+            return {"error": f"Department name {name!r} is already in use."}, 400
+        dept = Department(name=name, code=code)
+        session.add(dept)
+        session.commit()
+        session.refresh(dept)
+        return {
+            "status": "ok",
+            "department": {"id": dept.id, "name": dept.name, "code": dept.code},
+        }, 201
+    except Exception as exc:
+        session.rollback()
+        return {"error": str(exc)}, 500
+    finally:
+        session.close()
+
+
+def api_update_department(dept_id: int, body: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    """Update a department's name or code."""
+    session = _get_session()
+    try:
+        dept = session.get(Department, dept_id)
+        if dept is None:
+            return {"error": f"Department {dept_id} not found."}, 404
+
+        if "name" in body:
+            name = str(body["name"]).strip()
+            if not name:
+                return {"error": "name must not be empty."}, 400
+            clash = (
+                session.query(Department)
+                .filter(Department.name == name, Department.id != dept_id)
+                .first()
+            )
+            if clash:
+                return {"error": f"Department name {name!r} is already in use."}, 400
+            dept.name = name
+
+        if "code" in body:
+            code = str(body["code"]).strip()
+            if not code:
+                return {"error": "code must not be empty."}, 400
+            clash = (
+                session.query(Department)
+                .filter(Department.code == code, Department.id != dept_id)
+                .first()
+            )
+            if clash:
+                return {"error": f"Department code {code!r} is already in use."}, 400
+            dept.code = code
+
+        session.commit()
+        return {
+            "status": "ok",
+            "department": {"id": dept.id, "name": dept.name, "code": dept.code},
+        }, 200
+    except Exception as exc:
+        session.rollback()
+        return {"error": str(exc)}, 500
+    finally:
+        session.close()
+
+
+def api_delete_department(dept_id: int) -> tuple[dict[str, Any], int]:
+    """Delete a department if it has no users."""
+    session = _get_session()
+    try:
+        dept = session.get(Department, dept_id)
+        if dept is None:
+            return {"error": f"Department {dept_id} not found."}, 404
+        user_count = session.query(User).filter(User.dept_id == dept_id).count()
+        if user_count > 0:
+            return {
+                "error": f"Cannot delete department: {user_count} user(s) belong to it."
+            }, 400
+        session.delete(dept)  # cascades to levels, org_units, fallback rules
+        session.commit()
+        return {"status": "ok"}, 200
+    except Exception as exc:
+        session.rollback()
+        return {"error": str(exc)}, 500
+    finally:
+        session.close()
+
+
+# ---------------------------------------------------------------------------
+# Action CRUD
+# ---------------------------------------------------------------------------
+
+def api_create_action(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    """Create a new action."""
+    session = _get_session()
+    try:
+        name = str(body.get("name", "")).strip()
+        code = str(body.get("code", "")).strip()
+        if not name or not code:
+            return {"error": "name and code are required."}, 400
+        if session.query(Action).filter(Action.code == code).first():
+            return {"error": f"Action code {code!r} is already in use."}, 400
+        if session.query(Action).filter(Action.name == name).first():
+            return {"error": f"Action name {name!r} is already in use."}, 400
+        action = Action(
+            name=name,
+            code=code,
+            is_project_scoped=bool(body.get("is_project_scoped", False)),
+        )
+        session.add(action)
+        session.commit()
+        session.refresh(action)
+        return {
+            "status": "ok",
+            "action": {
+                "id": action.id,
+                "name": action.name,
+                "code": action.code,
+                "is_project_scoped": action.is_project_scoped,
+            },
+        }, 201
+    except Exception as exc:
+        session.rollback()
+        return {"error": str(exc)}, 500
+    finally:
+        session.close()
+
+
+def api_update_action(action_id: int, body: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    """Update an action's name, code, or project-scoped flag."""
+    session = _get_session()
+    try:
+        action = session.get(Action, action_id)
+        if action is None:
+            return {"error": f"Action {action_id} not found."}, 404
+
+        if "name" in body:
+            name = str(body["name"]).strip()
+            if not name:
+                return {"error": "name must not be empty."}, 400
+            clash = (
+                session.query(Action)
+                .filter(Action.name == name, Action.id != action_id)
+                .first()
+            )
+            if clash:
+                return {"error": f"Action name {name!r} is already in use."}, 400
+            action.name = name
+
+        if "code" in body:
+            code = str(body["code"]).strip()
+            if not code:
+                return {"error": "code must not be empty."}, 400
+            clash = (
+                session.query(Action)
+                .filter(Action.code == code, Action.id != action_id)
+                .first()
+            )
+            if clash:
+                return {"error": f"Action code {code!r} is already in use."}, 400
+            action.code = code
+
+        if "is_project_scoped" in body:
+            action.is_project_scoped = bool(body["is_project_scoped"])
+
+        session.commit()
+        return {
+            "status": "ok",
+            "action": {
+                "id": action.id,
+                "name": action.name,
+                "code": action.code,
+                "is_project_scoped": action.is_project_scoped,
+            },
+        }, 200
+    except Exception as exc:
+        session.rollback()
+        return {"error": str(exc)}, 500
+    finally:
+        session.close()
+
+
+def api_delete_action(action_id: int) -> tuple[dict[str, Any], int]:
+    """Delete an action (cascades its routing rules)."""
+    session = _get_session()
+    try:
+        action = session.get(Action, action_id)
+        if action is None:
+            return {"error": f"Action {action_id} not found."}, 404
+        session.delete(action)  # cascades to routing rules
+        session.commit()
+        return {"status": "ok"}, 200
+    except Exception as exc:
+        session.rollback()
+        return {"error": str(exc)}, 500
+    finally:
+        session.close()
+
+
+# ---------------------------------------------------------------------------
+# Org-unit CRUD
+# ---------------------------------------------------------------------------
+
+def api_create_org_unit(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    """Create a new org unit / team."""
+    session = _get_session()
+    try:
+        dept_id = body.get("dept_id")
+        name = str(body.get("name", "")).strip()
+        code = str(body.get("code", "")).strip()
+        if dept_id is None or not name or not code:
+            return {"error": "dept_id, name, and code are required."}, 400
+        dept_id = int(dept_id)
+        if session.get(Department, dept_id) is None:
+            return {"error": f"Department {dept_id} not found."}, 400
+        duplicate = (
+            session.query(OrgUnit)
+            .filter(OrgUnit.dept_id == dept_id, OrgUnit.code == code)
+            .first()
+        )
+        if duplicate:
+            return {
+                "error": f"Org-unit code {code!r} already exists for this department."
+            }, 400
+        org_unit = OrgUnit(dept_id=dept_id, name=name, code=code)
+        session.add(org_unit)
+        session.commit()
+        session.refresh(org_unit)
+        return {
+            "status": "ok",
+            "org_unit": {
+                "id": org_unit.id,
+                "dept_id": org_unit.dept_id,
+                "name": org_unit.name,
+                "code": org_unit.code,
+            },
+        }, 201
+    except Exception as exc:
+        session.rollback()
+        return {"error": str(exc)}, 500
+    finally:
+        session.close()
+
+
+def api_update_org_unit(org_unit_id: int, body: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    """Update an org unit's name or code."""
+    session = _get_session()
+    try:
+        org_unit = session.get(OrgUnit, org_unit_id)
+        if org_unit is None:
+            return {"error": f"OrgUnit {org_unit_id} not found."}, 404
+
+        if "name" in body:
+            name = str(body["name"]).strip()
+            if not name:
+                return {"error": "name must not be empty."}, 400
+            org_unit.name = name
+
+        if "code" in body:
+            code = str(body["code"]).strip()
+            if not code:
+                return {"error": "code must not be empty."}, 400
+            clash = (
+                session.query(OrgUnit)
+                .filter(
+                    OrgUnit.dept_id == org_unit.dept_id,
+                    OrgUnit.code == code,
+                    OrgUnit.id != org_unit_id,
+                )
+                .first()
+            )
+            if clash:
+                return {
+                    "error": f"Org-unit code {code!r} already exists for this department."
+                }, 400
+            org_unit.code = code
+
+        session.commit()
+        return {
+            "status": "ok",
+            "org_unit": {
+                "id": org_unit.id,
+                "dept_id": org_unit.dept_id,
+                "name": org_unit.name,
+                "code": org_unit.code,
+            },
+        }, 200
+    except Exception as exc:
+        session.rollback()
+        return {"error": str(exc)}, 500
+    finally:
+        session.close()
+
+
+def api_delete_org_unit(org_unit_id: int) -> tuple[dict[str, Any], int]:
+    """Delete an org unit if it has no active members."""
+    session = _get_session()
+    try:
+        org_unit = session.get(OrgUnit, org_unit_id)
+        if org_unit is None:
+            return {"error": f"OrgUnit {org_unit_id} not found."}, 404
+        active_members = (
+            session.query(OrgUnitMembership)
+            .filter(
+                OrgUnitMembership.org_unit_id == org_unit_id,
+                OrgUnitMembership.is_active.is_(True),
+            )
+            .count()
+        )
+        if active_members > 0:
+            return {
+                "error": f"Cannot delete org unit: {active_members} active member(s) remain."
+            }, 400
+        session.delete(org_unit)  # cascades inactive memberships
+        session.commit()
+        return {"status": "ok"}, 200
+    except Exception as exc:
+        session.rollback()
+        return {"error": str(exc)}, 500
+    finally:
+        session.close()
+
+
 # ---------------------------------------------------------------------------
 # Routing-rule update
 # ---------------------------------------------------------------------------
@@ -974,6 +1389,173 @@ def api_update_diagram_node(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
         session.close()
 
 
+# ---------------------------------------------------------------------------
+# Scenario Lab: ephemeral overlay simulation
+# ---------------------------------------------------------------------------
+
+# Supported overlay types for the Scenario Lab, mapped to their assignment model
+# and the field naming conventions used by the routing service.
+OVERLAY_SIMULATIONS = {
+    "acting": {
+        "label": "Acting",
+        "owner_label": "Principal (whose authority is acted)",
+        "substitute_label": "Acting approver",
+    },
+    "delegation": {
+        "label": "Delegation",
+        "owner_label": "Delegator (whose authority is delegated)",
+        "substitute_label": "Delegate approver",
+    },
+    "peer_coverage": {
+        "label": "Peer coverage",
+        "owner_label": "Covered approver",
+        "substitute_label": "Coverage approver",
+    },
+    "handover": {
+        "label": "Handover overlap",
+        "owner_label": "Outgoing approver",
+        "substitute_label": "Incoming approver",
+    },
+}
+
+HANDOVER_POLICIES = [
+    "old_until_end_date",
+    "new_from_start_date",
+    "both_required",
+    "new_primary_old_observer",
+]
+
+
+def _build_overlay_object(
+    overlay: dict[str, Any],
+    requester: User,
+):
+    """Construct (but do not commit) an overlay assignment object from a spec."""
+    overlay_type = str(overlay.get("type", "")).strip()
+    owner_id = overlay.get("owner_id")
+    substitute_id = overlay.get("substitute_id")
+    if overlay_type not in OVERLAY_SIMULATIONS:
+        raise ValueError(f"Unsupported overlay type {overlay_type!r}.")
+    if owner_id is None or substitute_id is None:
+        raise ValueError("owner_id and substitute_id are required.")
+
+    owner_id = int(owner_id)
+    substitute_id = int(substitute_id)
+
+    effective_from = _parse_request_at(overlay.get("effective_from")) or datetime(
+        2000, 1, 1
+    )
+    effective_to = _parse_request_at(overlay.get("effective_to")) or datetime(
+        2099, 12, 31
+    )
+
+    scope = {
+        "dept_id": overlay.get("dept_id"),
+        "org_unit_id": overlay.get("org_unit_id"),
+        "action_id": overlay.get("action_id"),
+    }
+    scope = {key: int(value) for key, value in scope.items() if value not in (None, "")}
+
+    if overlay_type == "acting":
+        return ActingAssignment(
+            principal_user_id=owner_id,
+            acting_user_id=substitute_id,
+            effective_from=effective_from,
+            effective_to=effective_to,
+            **scope,
+        )
+    if overlay_type == "delegation":
+        return DelegationAssignment(
+            delegator_user_id=owner_id,
+            delegate_user_id=substitute_id,
+            effective_from=effective_from,
+            effective_to=effective_to,
+            **scope,
+        )
+    if overlay_type == "peer_coverage":
+        return CoverageAssignment(
+            covered_user_id=owner_id,
+            coverage_user_id=substitute_id,
+            effective_from=effective_from,
+            effective_to=effective_to,
+            **scope,
+        )
+    # handover
+    policy = str(overlay.get("policy", "both_required")).strip() or "both_required"
+    if policy not in HANDOVER_POLICIES:
+        raise ValueError(f"Unsupported handover policy {policy!r}.")
+    return HandoverOverlap(
+        requester_user_id=requester.id,
+        old_approver_id=owner_id,
+        new_approver_id=substitute_id,
+        policy=policy,
+        effective_from=effective_from,
+        effective_to=effective_to,
+        **scope,
+    )
+
+
+def simulate_scenario_overlay(
+    requester_id: int,
+    action_code: str,
+    overlays: list[dict[str, Any]] | None = None,
+    request_at: str | None = None,
+    project_code: str | None = None,
+) -> dict[str, Any]:
+    """Simulate an approval chain with ad-hoc overlays applied, without persisting.
+
+    The overlays (acting, delegation, peer_coverage, handover) are inserted into a
+    transaction that is rolled back afterwards, so the Scenario Lab never mutates
+    the persisted POC state. The result highlights the resolved primary and
+    second-level approvers.
+    """
+    overlays = overlays or []
+    session = _get_session()
+    try:
+        requester = session.get(User, requester_id)
+        if requester is None or not requester.is_active:
+            return {"status": "error", "error": f"Requester {requester_id} not found or inactive."}
+
+        for overlay in overlays:
+            try:
+                overlay_obj = _build_overlay_object(overlay, requester)
+            except ValueError as exc:
+                return {"status": "error", "error": str(exc)}
+            session.add(overlay_obj)
+        session.flush()
+
+        parsed_request_at = _parse_request_at(request_at)
+        chain = build_approval_chain(
+            session,
+            requester_id,
+            action_code,
+            request_at=parsed_request_at,
+            project_code=project_code,
+        )
+        response = approval_chain_to_dict(chain)
+        steps = response.get("steps", [])
+        response.update(
+            {
+                "status": "success",
+                "request_at": request_at,
+                "project_code": project_code,
+                "primary_approver": steps[0]["approver"] if len(steps) >= 1 else None,
+                "primary_source": steps[0]["source"] if len(steps) >= 1 else None,
+                "second_level_approver": steps[1]["approver"] if len(steps) >= 2 else None,
+                "second_level_source": steps[1]["source"] if len(steps) >= 2 else None,
+            }
+        )
+        return response
+    except RoutingError as exc:
+        return {"status": "error", "error": str(exc)}
+    except Exception as exc:  # pragma: no cover - defensive
+        return {"status": "error", "error": str(exc)}
+    finally:
+        # Never persist Scenario Lab overlays or the simulated approval request.
+        session.rollback()
+        session.close()
+
+
 class ManualTestRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
@@ -1049,6 +1631,43 @@ class ManualTestRequestHandler(BaseHTTPRequestHandler):
             self._send_json(result, status=status)
             return
 
+        if path == "/api/departments":
+            payload = self._read_json_body()
+            result, status = api_create_department(payload)
+            self._send_json(result, status=status)
+            return
+
+        if path == "/api/actions":
+            payload = self._read_json_body()
+            result, status = api_create_action(payload)
+            self._send_json(result, status=status)
+            return
+
+        if path == "/api/org-units":
+            payload = self._read_json_body()
+            result, status = api_create_org_unit(payload)
+            self._send_json(result, status=status)
+            return
+
+        if path == "/api/dept-levels":
+            payload = self._read_json_body()
+            result, status = api_create_dept_level(payload)
+            self._send_json(result, status=status)
+            return
+
+        if path == "/api/simulate-overlay":
+            payload = self._read_json_body()
+            self._send_json(
+                simulate_scenario_overlay(
+                    requester_id=int(payload["requester_id"]),
+                    action_code=str(payload["action_code"]),
+                    overlays=payload.get("overlays"),
+                    request_at=payload.get("request_at"),
+                    project_code=payload.get("project_code"),
+                )
+            )
+            return
+
         if path == "/api/diagram/update-node":
             payload = self._read_json_body()
             result, status = api_update_diagram_node(payload)
@@ -1089,6 +1708,39 @@ class ManualTestRequestHandler(BaseHTTPRequestHandler):
             self._send_json(result, status=status)
             return
 
+        # PUT /api/departments/{id}
+        if path.startswith("/api/departments/"):
+            try:
+                dept_id = int(path.split("/api/departments/")[1])
+            except (ValueError, IndexError):
+                self._send_json({"error": "Invalid department ID."}, status=400)
+                return
+            result, status = api_update_department(dept_id, payload)
+            self._send_json(result, status=status)
+            return
+
+        # PUT /api/actions/{id}
+        if path.startswith("/api/actions/"):
+            try:
+                action_id = int(path.split("/api/actions/")[1])
+            except (ValueError, IndexError):
+                self._send_json({"error": "Invalid action ID."}, status=400)
+                return
+            result, status = api_update_action(action_id, payload)
+            self._send_json(result, status=status)
+            return
+
+        # PUT /api/org-units/{id}
+        if path.startswith("/api/org-units/"):
+            try:
+                org_unit_id = int(path.split("/api/org-units/")[1])
+            except (ValueError, IndexError):
+                self._send_json({"error": "Invalid org-unit ID."}, status=400)
+                return
+            result, status = api_update_org_unit(org_unit_id, payload)
+            self._send_json(result, status=status)
+            return
+
         # PUT /api/routing-rules/{id}
         if path.startswith("/api/routing-rules/"):
             try:
@@ -1125,6 +1777,50 @@ class ManualTestRequestHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "Invalid line ID."}, status=400)
                 return
             result, status = api_delete_reporting_line(line_id)
+            self._send_json(result, status=status)
+            return
+
+        # DELETE /api/dept-levels/{id}
+        if path.startswith("/api/dept-levels/"):
+            try:
+                level_id = int(path.split("/api/dept-levels/")[1])
+            except (ValueError, IndexError):
+                self._send_json({"error": "Invalid level ID."}, status=400)
+                return
+            result, status = api_delete_dept_level(level_id)
+            self._send_json(result, status=status)
+            return
+
+        # DELETE /api/departments/{id}
+        if path.startswith("/api/departments/"):
+            try:
+                dept_id = int(path.split("/api/departments/")[1])
+            except (ValueError, IndexError):
+                self._send_json({"error": "Invalid department ID."}, status=400)
+                return
+            result, status = api_delete_department(dept_id)
+            self._send_json(result, status=status)
+            return
+
+        # DELETE /api/actions/{id}
+        if path.startswith("/api/actions/"):
+            try:
+                action_id = int(path.split("/api/actions/")[1])
+            except (ValueError, IndexError):
+                self._send_json({"error": "Invalid action ID."}, status=400)
+                return
+            result, status = api_delete_action(action_id)
+            self._send_json(result, status=status)
+            return
+
+        # DELETE /api/org-units/{id}
+        if path.startswith("/api/org-units/"):
+            try:
+                org_unit_id = int(path.split("/api/org-units/")[1])
+            except (ValueError, IndexError):
+                self._send_json({"error": "Invalid org-unit ID."}, status=400)
+                return
+            result, status = api_delete_org_unit(org_unit_id)
             self._send_json(result, status=status)
             return
 

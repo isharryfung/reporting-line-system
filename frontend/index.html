@@ -25,6 +25,7 @@
       <button class="tab-btn" data-tab="diagram">Diagram Editor</button>
       <button class="tab-btn" data-tab="seed-editor">Seed Data Editor</button>
       <button class="tab-btn" data-tab="simulation">Simulation</button>
+      <button class="tab-btn" data-tab="scenario-lab">Scenario Lab</button>
       <button class="tab-btn" data-tab="cases">Business Cases</button>
     </nav>
 
@@ -63,6 +64,7 @@
               Click any node to open the edit panel. Edit name, level, department,
               org-unit, team-lead flag, or reporting manager. Save to persist changes
               and refresh the diagram. Circular reporting lines are detected and blocked.
+              Choose <strong>All Departments</strong> to view every department in one diagram.
             </p>
             <label class="inline-label">
               Department
@@ -178,7 +180,22 @@
 
           <!-- Dept levels table -->
           <div id="seed-tab-dept_levels" class="seed-tab-content hidden">
-            <h3>Department Levels</h3>
+            <div class="table-toolbar">
+              <h3>Department Levels</h3>
+              <button type="button" id="add-level-btn">+ Add Level</button>
+            </div>
+            <div id="add-level-form" class="inline-form hidden">
+              <h4>New Level</h4>
+              <div class="form-row">
+                <label>Department <select id="new-level-dept"></select></label>
+                <label>Rank <input type="number" id="new-level-rank" style="width:5rem" /></label>
+                <label>Level Name <input type="text" id="new-level-name" /></label>
+                <label class="checkbox-label"><input type="checkbox" id="new-level-top" /> Top Level</label>
+                <button type="button" id="save-new-level-btn">Create</button>
+                <button type="button" id="cancel-new-level-btn" class="btn-secondary">Cancel</button>
+              </div>
+              <div id="new-level-error" class="error-box hidden"></div>
+            </div>
             <div class="table-wrap">
               <table id="levels-table">
                 <thead>
@@ -254,39 +271,80 @@
             </div>
           </div>
 
-          <!-- Actions table (read-only overview) -->
+          <!-- Actions table -->
           <div id="seed-tab-actions" class="seed-tab-content hidden">
-            <h3>Actions</h3>
+            <div class="table-toolbar">
+              <h3>Actions</h3>
+              <button type="button" id="add-action-btn">+ Add Action</button>
+            </div>
+            <div id="add-action-form" class="inline-form hidden">
+              <h4>New Action</h4>
+              <div class="form-row">
+                <label>Name <input type="text" id="new-action-name" /></label>
+                <label>Code <input type="text" id="new-action-code" /></label>
+                <label class="checkbox-label"><input type="checkbox" id="new-action-project" /> Project Scoped</label>
+                <button type="button" id="save-new-action-btn">Create</button>
+                <button type="button" id="cancel-new-action-btn" class="btn-secondary">Cancel</button>
+              </div>
+              <div id="new-action-error" class="error-box hidden"></div>
+            </div>
             <div class="table-wrap">
               <table>
                 <thead>
-                  <tr><th>ID</th><th>Name</th><th>Code</th><th>Project Scoped</th></tr>
+                  <tr><th>ID</th><th>Name</th><th>Code</th><th>Project Scoped</th><th>Actions</th></tr>
                 </thead>
                 <tbody id="actions-tbody"></tbody>
               </table>
             </div>
           </div>
 
-          <!-- Departments table (read-only overview) -->
+          <!-- Departments table -->
           <div id="seed-tab-departments" class="seed-tab-content hidden">
-            <h3>Departments</h3>
+            <div class="table-toolbar">
+              <h3>Departments</h3>
+              <button type="button" id="add-dept-btn">+ Add Department</button>
+            </div>
+            <div id="add-dept-form" class="inline-form hidden">
+              <h4>New Department</h4>
+              <div class="form-row">
+                <label>Name <input type="text" id="new-dept-name" /></label>
+                <label>Code <input type="text" id="new-dept-code" /></label>
+                <button type="button" id="save-new-dept-btn">Create</button>
+                <button type="button" id="cancel-new-dept-btn" class="btn-secondary">Cancel</button>
+              </div>
+              <div id="new-dept-error" class="error-box hidden"></div>
+            </div>
             <div class="table-wrap">
               <table>
                 <thead>
-                  <tr><th>ID</th><th>Name</th><th>Code</th></tr>
+                  <tr><th>ID</th><th>Name</th><th>Code</th><th>Actions</th></tr>
                 </thead>
                 <tbody id="departments-tbody"></tbody>
               </table>
             </div>
           </div>
 
-          <!-- Org units table (read-only overview) -->
+          <!-- Org units table -->
           <div id="seed-tab-org_units" class="seed-tab-content hidden">
-            <h3>Org Units / Teams</h3>
+            <div class="table-toolbar">
+              <h3>Org Units / Teams</h3>
+              <button type="button" id="add-ou-btn">+ Add Org Unit</button>
+            </div>
+            <div id="add-ou-form" class="inline-form hidden">
+              <h4>New Org Unit</h4>
+              <div class="form-row">
+                <label>Department <select id="new-ou-dept"></select></label>
+                <label>Name <input type="text" id="new-ou-name" /></label>
+                <label>Code <input type="text" id="new-ou-code" /></label>
+                <button type="button" id="save-new-ou-btn">Create</button>
+                <button type="button" id="cancel-new-ou-btn" class="btn-secondary">Cancel</button>
+              </div>
+              <div id="new-ou-error" class="error-box hidden"></div>
+            </div>
             <div class="table-wrap">
               <table>
                 <thead>
-                  <tr><th>ID</th><th>Department</th><th>Name</th><th>Code</th></tr>
+                  <tr><th>ID</th><th>Department</th><th>Name</th><th>Code</th><th>Actions</th></tr>
                 </thead>
                 <tbody id="org-units-tbody"></tbody>
               </table>
@@ -351,6 +409,52 @@
           </p>
           <div id="scenario-list" class="scenario-grid"></div>
           <pre id="scenario-output">Choose a scenario.</pre>
+        </section>
+      </div>
+
+      <!-- ===== SCENARIO LAB TAB ===== -->
+      <div id="tab-scenario-lab" class="tab-content hidden">
+        <section class="card">
+          <h2>Scenario Lab — Advanced Test-Case Simulator</h2>
+          <p class="hint">
+            Build an advanced reporting-line scenario (delegation, acting, peer coverage,
+            handover) on top of the official line and see who becomes the
+            <strong>primary</strong> and <strong>second-level</strong> approver.
+            Overlays here are simulated only — they are <strong>not</strong> saved to the
+            POC state, so you can freely test cases.
+          </p>
+          <div class="two-column">
+            <div>
+              <h3>Request</h3>
+              <form id="scenario-lab-form" class="stack">
+                <label>Requester
+                  <select id="lab-requester"></select>
+                </label>
+                <label>Action
+                  <select id="lab-action"></select>
+                </label>
+                <label>Request date (optional)
+                  <input id="lab-request-at" type="datetime-local" />
+                </label>
+                <label>Project code (optional)
+                  <input id="lab-project-code" type="text" placeholder="UTP" />
+                </label>
+
+                <div class="section-header">
+                  <h3>Overlays</h3>
+                  <button type="button" id="lab-add-overlay-btn">+ Add overlay</button>
+                </div>
+                <div id="lab-overlays"></div>
+
+                <button type="submit">Run scenario</button>
+              </form>
+            </div>
+            <div>
+              <h3>Resolved Approvers</h3>
+              <div id="lab-result-summary" class="lab-summary">Run a scenario to see results.</div>
+              <pre id="lab-output">No scenario run yet.</pre>
+            </div>
+          </div>
         </section>
       </div>
 

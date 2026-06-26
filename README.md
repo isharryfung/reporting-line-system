@@ -12,7 +12,11 @@ University reporting-line system proof-of-concept built with Python, SQLAlchemy,
 - Department-level fallback approvers for top-level users
 - Org chart display with team-lead and co-head indicators
 - **Editable visual reporting-line diagram** with SVG nodes and edit panel
-- **Seed data editor** for users, levels, routing rules, fallback approvers, and reporting lines
+  (including an **All Departments** combined view)
+- **Seed data editor** with full add/edit/remove for users, levels, departments,
+  actions, org units, routing rules, fallback approvers, and reporting lines
+- **Scenario Lab** to simulate advanced overlay test cases (delegation, acting,
+  peer coverage, handover) and see the resolved primary and second-level approvers
 - **Persistent POC state** stored in SQLite (edits survive across simulations)
 - Advanced overlay routing for:
   - acting
@@ -47,7 +51,7 @@ Then open <http://127.0.0.1:8000>.
 
 ## Frontend POC
 
-The browser UI is organized into four tabs:
+The browser UI is organized into six tabs:
 
 ### Overview tab
 - Inspect seed users showing level, rank, org-unit, and team-lead status
@@ -56,6 +60,8 @@ The browser UI is organized into four tabs:
 
 ### Diagram Editor tab
 - **Visual SVG diagram** of the selected department's reporting hierarchy
+- Choose **All Departments** to render every department in a single diagram
+  (nodes are tagged with their department code)
 - Users are displayed as nodes positioned by level (L4 at top, L9 at bottom)
 - Solid lines show official primary reporting relationships
 - Team leads are marked with ★; top-level (Director) nodes are dark-coloured
@@ -65,11 +71,12 @@ The browser UI is organized into four tabs:
   - Circular reporting lines are detected and blocked with a clear error
 
 ### Seed Data Editor tab
-- Edit users, levels, routing rules, fallback approvers, and reporting lines
-  inline in table form
-- Add new users and reporting lines
+- Add / edit / remove **users**, **levels**, **departments**, **actions**, and
+  **org units**, plus edit routing rules, fallback approvers, and reporting lines
+- Deletions are guarded against referential integrity issues (e.g. a department
+  with users or a level still assigned to a user cannot be removed)
 - **Reset to default seed data** button restores original sample data
-- Changes are immediately available in the Simulation tab
+- Changes are immediately available in the Simulation and Scenario Lab tabs
 
 ### Simulation tab
 - Submit action simulations (requester, action, date, optional project)
@@ -77,6 +84,15 @@ The browser UI is organized into four tabs:
 - One-click advanced scenario simulations:
   - official route, acting, peer coverage, delegation, handover overlap,
     cross-department project, co-head, and self-approval blocked
+
+### Scenario Lab tab
+- Build ad-hoc advanced test cases on top of the official reporting line:
+  pick a requester, action, and one or more overlays
+  (delegation, acting, peer coverage, handover)
+- Runs the routing engine and shows the resolved **primary** and
+  **second-level** approvers, plus the full approval chain
+- Overlays are **simulated only** and never persisted, so the POC state is
+  never mutated while testing cases
 
 ## Persistent state
 
