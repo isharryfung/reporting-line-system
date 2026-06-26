@@ -359,6 +359,8 @@ th {
   fill: none;
   stroke: #4a7fcb;
   stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
 }
 
 .level-band {

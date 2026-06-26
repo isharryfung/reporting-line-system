@@ -518,15 +518,32 @@ function drawDiagram(svg, users, options) {
     const to = posMap[u.id];
     if (!from || !to) return;
 
-    const line = document.createElementNS(ns, "line");
-    line.setAttribute("x1", from.x + NODE_W / 2);
-    line.setAttribute("y1", from.y + NODE_H);
-    line.setAttribute("x2", to.x + NODE_W / 2);
-    line.setAttribute("y2", to.y);
-    line.setAttribute("class", "diagram-edge");
+    // Use an orthogonal (elbow) connector instead of a straight diagonal so the
+    // reporting lines between ranks stay vertical/horizontal and don't cross
+    // over each other or through nodes. The line drops straight down from the
+    // manager, runs horizontally along a band in the gap, then drops straight
+    // down into the child node — the standard, easy-to-read org-chart style.
+    const x1 = from.x + NODE_W / 2;
+    const y1 = from.y + NODE_H;
+    const x2 = to.x + NODE_W / 2;
+    const y2 = to.y;
+    // Horizontal band sits midway in the vertical gap between the two nodes.
+    const midY = y1 + (y2 - y1) / 2;
+
+    const edge = document.createElementNS(ns, "path");
+    if (Math.abs(x1 - x2) < 0.5) {
+      // Same column: a single straight vertical drop.
+      edge.setAttribute("d", `M ${x1} ${y1} L ${x2} ${y2}`);
+    } else {
+      edge.setAttribute(
+        "d",
+        `M ${x1} ${y1} L ${x1} ${midY} L ${x2} ${midY} L ${x2} ${y2}`
+      );
+    }
+    edge.setAttribute("class", "diagram-edge");
     // Arrow marker
-    line.setAttribute("marker-end", "url(#arrow)");
-    edgeGroup.appendChild(line);
+    edge.setAttribute("marker-end", "url(#arrow)");
+    edgeGroup.appendChild(edge);
   });
 
   // Arrow marker definition
