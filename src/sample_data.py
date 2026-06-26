@@ -123,22 +123,22 @@ def _seed_itso_hro_departments(
     session.add_all([itso, hro])
     session.flush()
 
-    # ITSO levels (rank 1 = most senior / top level).
+    # ITSO levels (rank 4 = most senior / top level).
     itso_level_specs = [
-        (1, "Department Head", True),
-        (2, "Senior Manager (Team Lead)", False),
-        (3, "Manager", False),
-        (4, "Systems Analyst", False),
-        (5, "Analyst Programmer", False),
-        (6, "Programmer", False),
+        (4, "Department Head", True),
+        (5, "Senior Manager (Team Lead)", False),
+        (6, "Manager", False),
+        (7, "Systems Analyst", False),
+        (8, "Analyst Programmer", False),
+        (9, "Programmer", False),
     ]
-    # HRO levels (no rank 4 - Systems Analyst is ITSO only).
+    # HRO levels (no rank 7 - Systems Analyst is ITSO only).
     hro_level_specs = [
-        (1, "Department Head", True),
-        (2, "Manager (Team Lead)", False),
-        (3, "Assistant Manager", False),
-        (5, "Officer", False),
-        (6, "Assistant Officer", False),
+        (4, "Department Head", True),
+        (5, "Manager (Team Lead)", False),
+        (6, "Assistant Manager", False),
+        (8, "Officer", False),
+        (9, "Assistant Officer", False),
     ]
 
     itso_levels: dict[int, DeptLevel] = {}
@@ -198,14 +198,14 @@ def _seed_itso_hro_departments(
         name=itso_head_name,
         email=f"{itso_head_name.lower()}@university.edu",
         dept_id=itso.id,
-        dept_level_id=itso_levels[1].id,
+        dept_level_id=itso_levels[4].id,
     )
     hro_head_name = next(hro_names)
     hro_head = User(
         name=hro_head_name,
         email=f"{hro_head_name.lower()}@university.edu",
         dept_id=hro.id,
-        dept_level_id=hro_levels[1].id,
+        dept_level_id=hro_levels[4].id,
     )
     session.add_all([itso_head, hro_head])
     session.flush()
@@ -216,7 +216,7 @@ def _seed_itso_hro_departments(
         dept=itso,
         team=itso_infra,
         level_by_rank=itso_levels,
-        composition=[(2, 1), (3, 1), (4, 2), (5, 3), (6, 3)],
+        composition=[(5, 1), (6, 1), (7, 2), (8, 3), (9, 3)],
         names=itso_names,
         head=itso_head,
     )
@@ -225,7 +225,7 @@ def _seed_itso_hro_departments(
         dept=itso,
         team=itso_apps,
         level_by_rank=itso_levels,
-        composition=[(2, 1), (3, 1), (4, 2), (5, 3), (6, 3)],
+        composition=[(5, 1), (6, 1), (7, 2), (8, 3), (9, 3)],
         names=itso_names,
         head=itso_head,
     )
@@ -234,7 +234,7 @@ def _seed_itso_hro_departments(
         dept=itso,
         team=itso_svc,
         level_by_rank=itso_levels,
-        composition=[(2, 1), (3, 1), (4, 2), (5, 2), (6, 3)],
+        composition=[(5, 1), (6, 1), (7, 2), (8, 2), (9, 3)],
         names=itso_names,
         head=itso_head,
     )
@@ -245,7 +245,7 @@ def _seed_itso_hro_departments(
         dept=hro,
         team=hro_recruitment,
         level_by_rank=hro_levels,
-        composition=[(2, 1), (3, 1), (5, 4), (6, 4)],
+        composition=[(5, 1), (6, 1), (8, 4), (9, 4)],
         names=hro_names,
         head=hro_head,
     )
@@ -254,7 +254,7 @@ def _seed_itso_hro_departments(
         dept=hro,
         team=hro_operations,
         level_by_rank=hro_levels,
-        composition=[(2, 1), (3, 1), (5, 3), (6, 4)],
+        composition=[(5, 1), (6, 1), (8, 3), (9, 4)],
         names=hro_names,
         head=hro_head,
     )
