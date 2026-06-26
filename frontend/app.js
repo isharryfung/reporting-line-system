@@ -322,26 +322,29 @@ const LEFT_PAD = 60;
 const TOP_PAD = 40;
 const LEVEL_LABEL_X = 8;
 
-// Distinct colors for reporting lines, indexed by the originating rank so that
-// the line between each pair of adjacent ranks (e.g. L8 → L9) is visually
-// distinct from neighbouring rank lines. Palette is chosen for good contrast;
-// it wraps around if there are more ranks than colors.
-const RANK_EDGE_COLORS = [
+// Distinct colors for reporting lines, assigned per individual person so that
+// each subordinate's line up to their manager is visually distinct — even when
+// several people at the same rank report into the same higher rank. For
+// example, for L8 → L9 both Belle(L8) and Biance(L8) report into L9, but
+// Belle's line and Biance's line each get their own color. Palette is chosen
+// for good contrast; it wraps around if there are more people than colors.
+const EDGE_COLORS = [
   "#4a7fcb", // blue
-  "#e8743b", // orange
-  "#2ca02c", // green
-  "#9467bd", // purple
   "#d62728", // red
+  "#2ca02c", // green
+  "#e8743b", // orange
+  "#9467bd", // purple
   "#17a2b8", // teal
   "#bc5090", // magenta
   "#8c6d31", // brown
 ];
 
-// Return a stable color for edges originating from the given rank.
-function rankEdgeColor(rank) {
-  const idx = ((Number(rank) % RANK_EDGE_COLORS.length) + RANK_EDGE_COLORS.length) %
-    RANK_EDGE_COLORS.length;
-  return RANK_EDGE_COLORS[idx];
+// Return a stable color for the given zero-based assignment index, wrapping
+// around the palette when there are more people than available colors.
+function edgeColorForIndex(index) {
+  const len = EDGE_COLORS.length;
+  const idx = ((Number(index) % len) + len) % len;
+  return EDGE_COLORS[idx];
 }
 
 // Build a DOM-safe arrow-marker id for a given color (e.g. "#4a7fcb" -> "arrow-4a7fcb").
@@ -537,10 +540,20 @@ function drawDiagram(svg, users, options) {
   const edgeGroup = document.createElementNS(ns, "g");
   svg.appendChild(edgeGroup);
 
-  // Each edge is colored by the rank it originates from (the manager's
-  // level_rank), so the line between two adjacent ranks (e.g. L8 → L9) has its
-  // own distinct color and is easy to tell apart from neighbouring rank lines.
+  // Each edge is colored per individual subordinate (the person whose line runs
+  // up to their manager), so two people at the same rank reporting into the same
+  // higher rank — e.g. Belle(L8) and Biance(L8) both reporting to L9 — each get
+  // their own distinct color. Colors are assigned in a stable order so a given
+  // person keeps the same color across re-renders.
   const usedColors = new Set();
+  const personColor = {};  // user.id → color
+  let colorCursor = 0;
+  users.forEach((u) => {
+    if (personColor[u.id] === undefined) {
+      personColor[u.id] = edgeColorForIndex(colorCursor);
+      colorCursor += 1;
+    }
+  });
 
   users.forEach((u) => {
     if (!u.manager_name) return;
@@ -562,7 +575,7 @@ function drawDiagram(svg, users, options) {
     // Horizontal band sits midway in the vertical gap between the two nodes.
     const midY = y1 + (y2 - y1) / 2;
 
-    const color = rankEdgeColor(manager.level_rank);
+    const color = personColor[u.id];
     usedColors.add(color);
 
     const edge = document.createElementNS(ns, "path");
