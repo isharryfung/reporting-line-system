@@ -488,3 +488,112 @@ def test_simulate_reporting_line_rejects_self_manager():
         edges=[{"user_id": ids["Peter"], "manager_id": ids["Peter"]}],
     )
     assert result["status"] == "error"
+
+
+def test_simulate_reporting_line_acting_overlay_changes_resolved_approver():
+    ids = _user_ids()
+    result = simulate_reporting_line(
+        requester_id=ids["Peter"],
+        edges=[],
+        action_code="sick_leave",
+        overlays=[
+            {"type": "acting", "owner_id": ids["Mary"], "substitute_id": ids["Nina"]}
+        ],
+    )
+    assert result["status"] == "success"
+    assert result["action_name"] == "Sick Leave"
+    assert result["overlay_steps"][0]["approver"] == "Nina"
+    assert result["overlay_steps"][0]["source"] == "acting"
+    assert "Nina" in result["overlay_wording"]
+
+
+def test_simulate_reporting_line_delegation_overlay_changes_resolved_approver():
+    ids = _user_ids()
+    result = simulate_reporting_line(
+        requester_id=ids["Peter"],
+        edges=[],
+        action_code="annual_leave",
+        overlays=[
+            {"type": "delegation", "owner_id": ids["Mary"], "substitute_id": ids["Nina"]}
+        ],
+    )
+    assert result["status"] == "success"
+    assert result["overlay_steps"][0]["approver"] == "Nina"
+    assert result["overlay_steps"][0]["source"] == "delegation"
+
+
+def test_simulate_reporting_line_project_overlay_routes_cross_department():
+    ids = _user_ids()
+    result = simulate_reporting_line(
+        requester_id=ids["Peter"],
+        edges=[],
+        action_code="project_change_request",
+        project_code="UTP",
+    )
+    assert result["status"] == "success"
+    assert result["overlay_steps"][0]["approver"] == "Helen"
+    assert result["overlay_steps"][0]["source"] == "project"
+
+
+def test_simulate_reporting_line_co_head_overlay_offers_alternate_approver():
+    ids = _user_ids()
+    result = simulate_reporting_line(
+        requester_id=ids["Peter"],
+        edges=[],
+        action_code="finance_team_plan",
+    )
+    assert result["status"] == "success"
+    primary = result["overlay_steps"][0]
+    assert primary["approver"] == "Mary"
+    assert primary["source"] == "co_head"
+    assert "Nina" in primary["alternate_approvers"]
+
+
+def test_simulate_reporting_line_blocks_self_approval():
+    ids = _user_ids()
+    # Acting makes Peter his own approver for sick_leave, which must be redirected.
+    result = simulate_reporting_line(
+        requester_id=ids["Peter"],
+        edges=[],
+        action_code="sick_leave",
+        overlays=[
+            {"type": "acting", "owner_id": ids["Mary"], "substitute_id": ids["Peter"]}
+        ],
+    )
+    assert result["status"] == "success"
+    primary = result["overlay_steps"][0]
+    assert primary["approver"] != "Peter"
+    assert primary["source"] == "self_approval_redirect"
+
+
+def test_simulate_reporting_line_without_action_has_no_overlay_fields():
+    ids = _user_ids()
+    result = simulate_reporting_line(requester_id=ids["Peter"], edges=[])
+    assert result["status"] == "success"
+    assert "overlay_steps" not in result
+    assert "action_code" not in result
+
+
+def test_simulate_reporting_line_reports_unknown_action_as_overlay_error():
+    ids = _user_ids()
+    result = simulate_reporting_line(
+        requester_id=ids["Peter"], edges=[], action_code="does_not_exist"
+    )
+    # Base reporting line still succeeds; only the overlay resolution reports the error.
+    assert result["status"] == "success"
+    assert "not found" in result["overlay_error"]
+
+
+def test_simulate_reporting_line_overlays_are_not_persisted():
+    ids = _user_ids()
+    simulate_reporting_line(
+        requester_id=ids["Peter"],
+        edges=[],
+        action_code="sick_leave",
+        overlays=[
+            {"type": "acting", "owner_id": ids["Mary"], "substitute_id": ids["Nina"]}
+        ],
+    )
+    # Without the ad-hoc overlay, the official sick_leave route still goes to Mary.
+    plain = simulate_action_request(ids["Peter"], "sick_leave")
+    assert plain["steps"][0]["approver"] == "Mary"

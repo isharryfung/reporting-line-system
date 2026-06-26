@@ -153,6 +153,38 @@
             <svg id="testcase-svg" width="100%" height="540"></svg>
           </div>
 
+          <!-- Overlay controls: see how acting / delegation / project / co-head /
+               self-approval change the selected person's resolved approver line. -->
+          <div id="testcase-overlay-panel" class="testcase-overlay-panel">
+            <h3>Overlays (acting, delegation, project, co-head, self-approval)</h3>
+            <p class="hint">
+              Pick an action to resolve the selected person's approver line through the
+              routing engine, then add overlays to see how the result changes.
+              Co-head and self-approval-blocked behaviour appear automatically for the
+              chosen action. Overlays here are <strong>never saved</strong>.
+            </p>
+            <div class="testcase-overlay-controls">
+              <label class="inline-label">
+                Action
+                <select id="testcase-action">
+                  <option value="">— none (reporting line only) —</option>
+                </select>
+              </label>
+              <label class="inline-label">
+                Project code
+                <input type="text" id="testcase-project-code" placeholder="e.g. UTP" />
+              </label>
+              <label class="inline-label">
+                Request at
+                <input type="datetime-local" id="testcase-request-at" />
+              </label>
+              <button type="button" id="testcase-add-overlay-btn" class="btn-secondary">
+                + Add overlay
+              </button>
+            </div>
+            <div id="testcase-overlays" class="overlay-list"></div>
+          </div>
+
           <!-- Reporting-line wording result, shown under the diagram -->
           <div id="testcase-result" class="testcase-result">
             <h3>Reporting line result</h3>
@@ -160,6 +192,11 @@
               Pick or click a person to see the reporting line result.
             </p>
             <ol id="testcase-steps" class="testcase-steps"></ol>
+            <div id="testcase-overlay-result" class="testcase-overlay-result hidden">
+              <h4>Overlay-resolved approver line</h4>
+              <p id="testcase-overlay-wording" class="testcase-wording"></p>
+              <ol id="testcase-overlay-steps" class="testcase-steps"></ol>
+            </div>
           </div>
 
           <!-- Temporary manager edit panel for the test-case diagram -->

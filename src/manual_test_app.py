@@ -1619,6 +1619,10 @@ def _apply_reporting_line_edges(session: Session, edges: list[dict[str, Any]]) -
 def simulate_reporting_line(
     requester_id: int,
     edges: list[dict[str, Any]] | None = None,
+    overlays: list[dict[str, Any]] | None = None,
+    action_code: str | None = None,
+    request_at: str | None = None,
+    project_code: str | None = None,
 ) -> dict[str, Any]:
     """Resolve a requester's reporting line for a temporarily edited diagram.
 
@@ -1627,8 +1631,18 @@ def simulate_reporting_line(
     that is always rolled back, so editing the test-case diagram never mutates
     the persisted POC state. The reporting line is walked from the requester up
     to the top and returned both as structured steps and as plain wording.
+
+    When ``action_code`` is supplied, the same rolled-back transaction also runs
+    the full routing engine so the user can see how overlays change the resolved
+    approver line. ``overlays`` are ad-hoc acting/delegation/peer_coverage/handover
+    assignments (built with :func:`_build_overlay_object`); ``project_code`` drives
+    cross-department project routing; co-head and self-approval-blocked behaviour
+    emerge automatically from the routing engine for the chosen action. The
+    overlay-resolved chain is returned as ``overlay_steps`` with per-step ``source``
+    labels plus plain-language ``overlay_wording``.
     """
     edges = edges or []
+    overlays = overlays or []
     session = _get_session()
     try:
         requester = session.get(User, requester_id)
@@ -1690,7 +1704,7 @@ def simulate_reporting_line(
 
         top_user = current
         wording = _reporting_line_wording(requester, steps, top_user)
-        return {
+        response: dict[str, Any] = {
             "status": "success",
             "requester": requester.name,
             "requester_id": requester.id,
@@ -1700,12 +1714,104 @@ def simulate_reporting_line(
             "top_of_line_label": _user_line_label(top_user),
             "wording": wording,
         }
+
+        # Optionally resolve the overlay-aware approval line through the routing
+        # engine, inside this same rolled-back transaction so nothing persists.
+        if action_code:
+            response.update(
+                _resolve_overlay_chain(
+                    session,
+                    requester,
+                    overlays,
+                    action_code,
+                    request_at,
+                    project_code,
+                )
+            )
+        return response
     except Exception as exc:  # pragma: no cover - defensive
         return {"status": "error", "error": str(exc)}
     finally:
         # Never persist test-case diagram edits.
         session.rollback()
         session.close()
+
+
+def _resolve_overlay_chain(
+    session: Session,
+    requester: User,
+    overlays: list[dict[str, Any]],
+    action_code: str,
+    request_at: str | None,
+    project_code: str | None,
+) -> dict[str, Any]:
+    """Resolve the overlay-affected approval line for the Test Case Diagram.
+
+    Builds the requested overlay objects in the open (rolled-back) transaction,
+    runs :func:`build_approval_chain`, and returns the resolved approver steps
+    with per-step ``source`` labels plus plain-language wording. Any failure is
+    returned as ``overlay_error`` so the base reporting line still displays.
+    """
+    action = session.query(Action).filter(Action.code == action_code).first()
+    if action is None:
+        return {"action_code": action_code, "overlay_error": f"Action {action_code!r} not found."}
+
+    try:
+        for overlay in overlays:
+            session.add(_build_overlay_object(overlay, requester))
+        session.flush()
+
+        chain = build_approval_chain(
+            session,
+            requester.id,
+            action_code,
+            request_at=_parse_request_at(request_at),
+            project_code=project_code or None,
+        )
+    except (ValueError, RoutingError) as exc:
+        return {
+            "action_code": action_code,
+            "action_name": action.name,
+            "overlay_error": str(exc),
+        }
+
+    chain_dict = approval_chain_to_dict(chain)
+    overlay_steps = chain_dict.get("steps", [])
+    return {
+        "action_code": action_code,
+        "action_name": action.name,
+        "overlay_steps": overlay_steps,
+        "overlay_wording": _overlay_chain_wording(requester, action, overlay_steps),
+    }
+
+
+def _overlay_chain_wording(
+    requester: User,
+    action: Action,
+    steps: list[dict[str, Any]],
+) -> str:
+    """Compose a plain-language description of an overlay-resolved approval line."""
+    if not steps:
+        return (
+            f"{requester.name} has no approver for {action.name}; the request would "
+            f"have no one to approve it."
+        )
+
+    sentences = [
+        f"For {action.name}, {requester.name}'s request is approved by "
+        f"{steps[0]['approver']} (via {steps[0]['source']})."
+    ]
+    for step in steps[1:]:
+        sentences.append(
+            f"It then escalates to {step['approver']} (via {step['source']})."
+        )
+    for step in steps:
+        if step.get("alternate_approvers"):
+            alternates = ", ".join(step["alternate_approvers"])
+            sentences.append(
+                f"{step['approver']} may alternatively be covered by {alternates}."
+            )
+    return " ".join(sentences)
 
 
 def _reporting_line_wording(
@@ -1848,6 +1954,10 @@ class ManualTestRequestHandler(BaseHTTPRequestHandler):
                 simulate_reporting_line(
                     requester_id=int(payload["requester_id"]),
                     edges=payload.get("edges"),
+                    overlays=payload.get("overlays"),
+                    action_code=payload.get("action_code"),
+                    request_at=payload.get("request_at"),
+                    project_code=payload.get("project_code"),
                 )
             )
             return

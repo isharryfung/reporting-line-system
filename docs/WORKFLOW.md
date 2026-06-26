@@ -247,15 +247,25 @@ under the diagram — without mutating the persisted POC state.
 3. **Click any node** to open the temporary edit panel and change who that
    person **reports to**. The change updates the diagram immediately but is
    **not saved** to the POC state.
-4. Choose a **Requester**. The reporting line is walked from the requester up to
-   the top and described in plain wording beneath the diagram, with each step
-   listed (e.g. `Peter → Mary (FIN Senior Manager, L5)`).
-5. Circular reporting lines introduced by the edits are detected and reported.
-6. **Reset diagram** restores the official reporting lines.
+4. Choose a **Requester** (or click a person in the diagram). The reporting line
+   is walked from the requester up to the top and described in plain wording
+   beneath the diagram, with each step listed (e.g. `Peter → Mary (FIN Senior
+   Manager, L5)`).
+5. To test overlays, pick an **Action** in the overlay panel (plus an optional
+   **Project code** and **Request at** date) and add **acting** / **delegation**
+   / **peer coverage** / **handover** overlay rows. The selected person's
+   approver line is then resolved through the full routing engine and shown as a
+   separate **Overlay-resolved approver line**, with each step tagged by its
+   routing **source**. Cross-department **project**, **co-head**, and
+   **self-approval-blocked** behaviour appear automatically for the chosen action.
+6. Circular reporting lines introduced by the edits are detected and reported.
+7. **Reset diagram** restores the official reporting lines.
 
 The diagram edits are sent as primary manager assignments to
-`POST /api/simulate-reporting-line`, applied inside a transaction that is always
-rolled back, so the test-case diagram never changes persisted data.
+`POST /api/simulate-reporting-line`, together with any chosen action, project
+code, and overlay specs. Everything is applied inside a transaction that is
+always rolled back, so the test-case diagram and its overlays never change
+persisted data.
 
 ## Scenario Lab (advanced test-case simulator)
 

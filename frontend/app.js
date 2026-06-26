@@ -1567,12 +1567,33 @@ function initTestCaseDiagram() {
       .getElementById("testcase-edit-apply")
       .addEventListener("click", applyTestCaseManager);
 
+    // Overlay controls: re-resolve whenever the action, project, date, or any
+    // overlay row changes.
+    const actionSel = document.getElementById("testcase-action");
+    const projectInput = document.getElementById("testcase-project-code");
+    const requestAtInput = document.getElementById("testcase-request-at");
+    if (actionSel) actionSel.addEventListener("change", runTestCaseReportingLine);
+    if (projectInput) projectInput.addEventListener("input", runTestCaseReportingLine);
+    if (requestAtInput) requestAtInput.addEventListener("change", runTestCaseReportingLine);
+    document
+      .getElementById("testcase-add-overlay-btn")
+      .addEventListener("click", () => addTestCaseOverlayRow());
+
     testCaseDiagramReady = true;
   }
 
   // Always start from a fresh, untouched working copy when entering the tab.
   tcCloneUsers();
   reqSel.replaceChildren(...userOptionEls());
+  const actionSel = document.getElementById("testcase-action");
+  if (actionSel) {
+    actionSel.replaceChildren(
+      createOption("", "— none (reporting line only) —"),
+      ...(bootstrap ? bootstrap.actions : []).map((a) => createOption(a.code, a.name))
+    );
+  }
+  const overlayContainer = document.getElementById("testcase-overlays");
+  if (overlayContainer) overlayContainer.replaceChildren();
   closeTestCaseEditPanel();
   renderTestCaseDiagram();
   runTestCaseReportingLine();
@@ -1651,6 +1672,103 @@ function applyTestCaseManager() {
   runTestCaseReportingLine();
 }
 
+// Build one overlay row for the Test Case Diagram, reusing the Scenario Lab
+// overlay metadata. Each row defines an acting / delegation / peer_coverage /
+// handover assignment that is applied (and rolled back) server-side.
+function addTestCaseOverlayRow() {
+  const container = document.getElementById("testcase-overlays");
+  if (!container) return;
+  const overlayTypes = bootstrap ? bootstrap.overlay_simulations : [];
+  const policies = bootstrap ? bootstrap.handover_policies : [];
+
+  const row = document.createElement("div");
+  row.className = "overlay-row";
+
+  const typeSel = document.createElement("select");
+  typeSel.className = "overlay-type";
+  typeSel.replaceChildren(...overlayTypes.map((o) => createOption(o.type, o.label)));
+
+  const ownerSel = document.createElement("select");
+  ownerSel.className = "overlay-owner";
+  ownerSel.replaceChildren(...userOptionEls());
+
+  const subSel = document.createElement("select");
+  subSel.className = "overlay-substitute";
+  subSel.replaceChildren(...userOptionEls());
+
+  const policySel = document.createElement("select");
+  policySel.className = "overlay-policy";
+  policySel.replaceChildren(...policies.map((p) => createOption(p, p)));
+
+  const removeBtn = document.createElement("button");
+  removeBtn.type = "button";
+  removeBtn.className = "btn-small btn-danger";
+  removeBtn.textContent = "✕";
+  removeBtn.addEventListener("click", () => {
+    row.remove();
+    runTestCaseReportingLine();
+  });
+
+  const ownerLabel = document.createElement("label");
+  ownerLabel.className = "overlay-owner-label";
+  const subLabel = document.createElement("label");
+  subLabel.className = "overlay-sub-label";
+  const policyLabel = document.createElement("label");
+  policyLabel.textContent = "Policy";
+  policyLabel.appendChild(policySel);
+
+  function syncLabels() {
+    const meta = overlayTypes.find((o) => o.type === typeSel.value) || {};
+    ownerLabel.firstChild && ownerLabel.firstChild.remove();
+    ownerLabel.insertBefore(
+      document.createTextNode(meta.owner_label || "Authority owner"),
+      ownerSel
+    );
+    subLabel.firstChild && subLabel.firstChild.remove();
+    subLabel.insertBefore(
+      document.createTextNode(meta.substitute_label || "Substitute"),
+      subSel
+    );
+    policyLabel.classList.toggle("hidden", typeSel.value !== "handover");
+  }
+  ownerLabel.appendChild(ownerSel);
+  subLabel.appendChild(subSel);
+  typeSel.addEventListener("change", () => {
+    syncLabels();
+    runTestCaseReportingLine();
+  });
+  [ownerSel, subSel, policySel].forEach((sel) =>
+    sel.addEventListener("change", runTestCaseReportingLine)
+  );
+
+  const typeLabel = document.createElement("label");
+  typeLabel.textContent = "Overlay type";
+  typeLabel.appendChild(typeSel);
+
+  row.append(typeLabel, ownerLabel, subLabel, policyLabel, removeBtn);
+  container.appendChild(row);
+  syncLabels();
+  runTestCaseReportingLine();
+}
+
+// Collect the overlay rows into the payload shape expected by the backend.
+function collectTestCaseOverlays() {
+  const overlays = [];
+  document.querySelectorAll("#testcase-overlays .overlay-row").forEach((row) => {
+    const type = row.querySelector(".overlay-type").value;
+    const overlay = {
+      type,
+      owner_id: Number(row.querySelector(".overlay-owner").value),
+      substitute_id: Number(row.querySelector(".overlay-substitute").value),
+    };
+    if (type === "handover") {
+      overlay.policy = row.querySelector(".overlay-policy").value;
+    }
+    overlays.push(overlay);
+  });
+  return overlays;
+}
+
 async function runTestCaseReportingLine() {
   const reqSel = document.getElementById("testcase-requester");
   const wordingEl = document.getElementById("testcase-wording");
@@ -1663,10 +1781,24 @@ async function runTestCaseReportingLine() {
     manager_id: u.manager_id != null ? u.manager_id : null,
   }));
 
+  const actionCode = (document.getElementById("testcase-action") || {}).value || "";
+  const projectCode = (
+    (document.getElementById("testcase-project-code") || {}).value || ""
+  ).trim();
+  const requestAtRaw =
+    (document.getElementById("testcase-request-at") || {}).value || "";
+
   const resp = await fetch("/api/simulate-reporting-line", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ requester_id: Number(reqSel.value), edges }),
+    body: JSON.stringify({
+      requester_id: Number(reqSel.value),
+      edges,
+      overlays: collectTestCaseOverlays(),
+      action_code: actionCode || null,
+      project_code: projectCode || null,
+      request_at: requestAtRaw ? `${requestAtRaw}:00+00:00` : null,
+    }),
   });
   const result = await resp.json();
   stepsEl.replaceChildren();
@@ -1674,6 +1806,7 @@ async function runTestCaseReportingLine() {
   if (result.status !== "success") {
     wordingEl.classList.add("testcase-error");
     wordingEl.textContent = result.error || "Could not resolve the reporting line.";
+    renderTestCaseOverlayResult(null);
     return;
   }
   wordingEl.classList.remove("testcase-error");
@@ -1682,6 +1815,50 @@ async function runTestCaseReportingLine() {
   result.steps.forEach((step) => {
     const li = document.createElement("li");
     li.textContent = `${step.user} → ${step.manager_label}`;
+    stepsEl.appendChild(li);
+  });
+
+  renderTestCaseOverlayResult(result);
+}
+
+// Render the overlay-resolved approval line (when an action was chosen), tagging
+// each step with the routing source that produced it.
+function renderTestCaseOverlayResult(result) {
+  const box = document.getElementById("testcase-overlay-result");
+  const wordingEl = document.getElementById("testcase-overlay-wording");
+  const stepsEl = document.getElementById("testcase-overlay-steps");
+  if (!box || !wordingEl || !stepsEl) return;
+
+  if (!result || !result.action_code) {
+    box.classList.add("hidden");
+    wordingEl.textContent = "";
+    stepsEl.replaceChildren();
+    return;
+  }
+
+  box.classList.remove("hidden");
+  stepsEl.replaceChildren();
+
+  if (result.overlay_error) {
+    wordingEl.classList.add("testcase-error");
+    wordingEl.textContent = `${result.action_name || result.action_code}: ${result.overlay_error}`;
+    return;
+  }
+
+  wordingEl.classList.remove("testcase-error");
+  wordingEl.textContent = result.overlay_wording || "";
+
+  (result.overlay_steps || []).forEach((step) => {
+    const li = document.createElement("li");
+    const tag = document.createElement("span");
+    tag.className = "overlay-source-tag";
+    tag.textContent = step.source;
+    li.append(document.createTextNode(`${step.approver} `), tag);
+    if (step.alternate_approvers && step.alternate_approvers.length) {
+      li.append(
+        document.createTextNode(` (or ${step.alternate_approvers.join(", ")})`)
+      );
+    }
     stepsEl.appendChild(li);
   });
 }

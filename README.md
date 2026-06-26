@@ -75,9 +75,16 @@ The browser UI is organized into seven tabs:
 - **Click any node** to **temporarily** change who it reports to — edits here are
   **never saved** to the POC state (they are simulated in a rolled-back transaction)
 - Choose **All Departments** to build the case across every department at once
-- Pick a **requester** and the resolved reporting line is shown as plain
-  **wording under the diagram** (e.g. "Peter reports to Mary, who reports to
-  Fiona … Fiona is at the top of this reporting line")
+- Click a person to select them as the **requester**; the resolved reporting
+  line is shown as plain **wording under the diagram** (e.g. "Peter reports to
+  Mary, who reports to Fiona … Fiona is at the top of this reporting line")
+- **Apply overlays** to see how routing changes the selected person's resolved
+  approver line: pick an **action** (and optional **project code** / **request
+  date**) and add **acting**, **delegation**, or other overlay rows. Co-head and
+  self-approval-blocked behaviour appear automatically for the chosen action.
+  Each resolved step is tagged with its routing **source** (e.g. `acting`,
+  `delegation`, `project`, `co_head`, `self_approval_redirect`). Overlays are
+  simulated in the same rolled-back transaction and **never saved**
 - Circular reporting lines created while editing are detected and reported
 - **Reset diagram** restores the official reporting lines
 
