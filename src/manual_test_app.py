@@ -50,6 +50,12 @@ _DB_PATH = os.environ.get("REPORTING_LINE_DB", "/tmp/reporting_line_manual_test.
 _engine = None
 _SessionFactory = None
 
+# Department codes the sample data is expected to seed. A persisted database
+# created by an older build (e.g. before the ITSO/HRO departments were added)
+# will be missing some of these, in which case it is re-seeded so the diagrams
+# always show the full sample organisation.
+_EXPECTED_SEED_DEPARTMENTS = frozenset({"FIN", "HR", "ITSO", "HRO"})
+
 
 def _get_engine():
     global _engine, _SessionFactory
@@ -58,14 +64,37 @@ def _get_engine():
         init_db(_engine)
         from sqlalchemy.orm import sessionmaker
         _SessionFactory = sessionmaker(bind=_engine)
-        # Seed if empty
+        # Seed if empty, or re-seed if a persisted database from an older build
+        # is missing some of the expected sample departments (e.g. ITSO/HRO).
         session = _SessionFactory()
         try:
             if session.query(User).count() == 0:
                 seed_sample_data(session)
+            elif not _seed_is_complete(session):
+                session.close()
+                _reseed_engine()
+                return _engine
         finally:
             session.close()
     return _engine
+
+
+def _seed_is_complete(session: Session) -> bool:
+    """Return True if every expected sample department exists in *session*."""
+    existing = {code for (code,) in session.query(Department.code).all()}
+    return _EXPECTED_SEED_DEPARTMENTS.issubset(existing)
+
+
+def _reseed_engine() -> None:
+    """Drop and re-create the schema on the active engine, then re-seed."""
+    from src.models import Base
+    Base.metadata.drop_all(_engine)
+    Base.metadata.create_all(_engine)
+    session = _SessionFactory()
+    try:
+        seed_sample_data(session)
+    finally:
+        session.close()
 
 
 def _get_session() -> Session:
@@ -75,16 +104,8 @@ def _get_session() -> Session:
 
 def _reset_database() -> None:
     """Drop all data and re-seed from defaults."""
-    global _engine, _SessionFactory
-    from src.models import Base
     if _engine is not None:
-        Base.metadata.drop_all(_engine)
-        Base.metadata.create_all(_engine)
-        session = _SessionFactory()
-        try:
-            seed_sample_data(session)
-        finally:
-            session.close()
+        _reseed_engine()
     else:
         _get_engine()
 

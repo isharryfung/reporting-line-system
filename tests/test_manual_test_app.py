@@ -602,3 +602,43 @@ def test_simulate_reporting_line_overlays_are_not_persisted():
     # Without the ad-hoc overlay, the official sick_leave route still goes to Mary.
     plain = simulate_action_request(ids["Peter"], "sick_leave")
     assert plain["steps"][0]["approver"] == "Mary"
+
+
+def test_stale_persisted_db_missing_seed_departments_is_reseeded(tmp_path, monkeypatch):
+    """A persisted DB from an older build (missing ITSO/HRO) is re-seeded so the
+    full sample organisation is always available."""
+    import src.manual_test_app as app
+    from src.database import create_engine_sqlite, init_db
+    from sqlalchemy.orm import sessionmaker
+    from src.models import Department, DeptLevel, User
+
+    db_path = tmp_path / "stale.db"
+
+    # Build a stale database that only contains the original FIN + HR seed.
+    engine = create_engine_sqlite(str(db_path))
+    init_db(engine)
+    session = sessionmaker(bind=engine)()
+    finance = Department(name="Finance", code="FIN")
+    session.add(finance)
+    session.flush()
+    level = DeptLevel(
+        dept_id=finance.id, level_rank=4, level_name="Director", is_top_level=True
+    )
+    session.add(level)
+    session.flush()
+    session.add(
+        User(name="Old", email="old@university.edu", dept_id=finance.id, dept_level_id=level.id)
+    )
+    session.commit()
+    session.close()
+    engine.dispose()
+
+    # Point the app at the stale database and force a fresh engine load.
+    monkeypatch.setattr(app, "_DB_PATH", str(db_path))
+    monkeypatch.setattr(app, "_engine", None)
+    monkeypatch.setattr(app, "_SessionFactory", None)
+
+    payload = app.build_bootstrap_payload()
+    assert app._EXPECTED_SEED_DEPARTMENTS.issubset(
+        {department["code"] for department in payload["departments"]}
+    )
