@@ -357,7 +357,7 @@ th {
 
 .diagram-edge {
   fill: none;
-  stroke: #4a7fcb;
+  stroke: #4a7fcb; /* fallback; per-edge stroke is set inline by rank color */
   stroke-width: 1.5;
   stroke-linejoin: round;
   stroke-linecap: round;

@@ -322,6 +322,33 @@ const LEFT_PAD = 60;
 const TOP_PAD = 40;
 const LEVEL_LABEL_X = 8;
 
+// Distinct colors for reporting lines, indexed by the originating rank so that
+// the line between each pair of adjacent ranks (e.g. L8 → L9) is visually
+// distinct from neighbouring rank lines. Palette is chosen for good contrast;
+// it wraps around if there are more ranks than colors.
+const RANK_EDGE_COLORS = [
+  "#4a7fcb", // blue
+  "#e8743b", // orange
+  "#2ca02c", // green
+  "#9467bd", // purple
+  "#d62728", // red
+  "#17a2b8", // teal
+  "#bc5090", // magenta
+  "#8c6d31", // brown
+];
+
+// Return a stable color for edges originating from the given rank.
+function rankEdgeColor(rank) {
+  const idx = ((Number(rank) % RANK_EDGE_COLORS.length) + RANK_EDGE_COLORS.length) %
+    RANK_EDGE_COLORS.length;
+  return RANK_EDGE_COLORS[idx];
+}
+
+// Build a DOM-safe arrow-marker id for a given color (e.g. "#4a7fcb" -> "arrow-4a7fcb").
+function rankArrowId(color) {
+  return "arrow-" + color.replace(/[^a-z0-9]/gi, "");
+}
+
 function collectChartUsers(chart, users) {
   chart.org_units.forEach((ou) => {
     ou.members.forEach((m) => {
@@ -510,6 +537,11 @@ function drawDiagram(svg, users, options) {
   const edgeGroup = document.createElementNS(ns, "g");
   svg.appendChild(edgeGroup);
 
+  // Each edge is colored by the rank it originates from (the manager's
+  // level_rank), so the line between two adjacent ranks (e.g. L8 → L9) has its
+  // own distinct color and is easy to tell apart from neighbouring rank lines.
+  const usedColors = new Set();
+
   users.forEach((u) => {
     if (!u.manager_name) return;
     const manager = users.find((m) => m.name === u.manager_name);
@@ -530,6 +562,9 @@ function drawDiagram(svg, users, options) {
     // Horizontal band sits midway in the vertical gap between the two nodes.
     const midY = y1 + (y2 - y1) / 2;
 
+    const color = rankEdgeColor(manager.level_rank);
+    usedColors.add(color);
+
     const edge = document.createElementNS(ns, "path");
     if (Math.abs(x1 - x2) < 0.5) {
       // Same column: a single straight vertical drop.
@@ -541,18 +576,23 @@ function drawDiagram(svg, users, options) {
       );
     }
     edge.setAttribute("class", "diagram-edge");
-    // Arrow marker
-    edge.setAttribute("marker-end", "url(#arrow)");
+    edge.style.stroke = color;
+    // Arrow marker, color-matched to this edge's stroke.
+    edge.setAttribute("marker-end", `url(#${rankArrowId(color)})`);
     edgeGroup.appendChild(edge);
   });
 
-  // Arrow marker definition
+  // Arrow marker definitions — one per color actually used, so each arrowhead
+  // matches the color of its reporting line.
   const defs = document.createElementNS(ns, "defs");
-  defs.innerHTML = `
-    <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-      <path d="M0,0 L0,6 L8,3 z" fill="#4a7fcb" />
-    </marker>
-  `;
+  defs.innerHTML = Array.from(usedColors)
+    .map(
+      (color) => `
+    <marker id="${rankArrowId(color)}" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="${color}" />
+    </marker>`
+    )
+    .join("");
   svg.insertBefore(defs, svg.firstChild);
 
   // Nodes
