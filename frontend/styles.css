@@ -374,6 +374,21 @@ th {
   font-size: 11px;
 }
 
+.dept-label {
+  fill: #4a7fcb;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-anchor: middle;
+}
+
+.dept-separator {
+  fill: none;
+  stroke: #c7d4e6;
+  stroke-dasharray: 3 5;
+  stroke-width: 1;
+}
+
 /* Edit Panel */
 .edit-panel {
   background: #f8fbff;

@@ -354,15 +354,65 @@ function renderDiagram(departmentCode) {
   });
   const sortedLevels = Object.keys(levelMap).map(Number).sort((a, b) => a - b);
 
-  // Assign positions
+  // Determine a consistent department order so each department forms a
+  // vertical column-group that stays aligned across every level row.
+  const DEPT_KEY = (u) => u.department_code || "—";
+  const deptCodes = [];
+  users.forEach((u) => {
+    const code = DEPT_KEY(u);
+    if (!deptCodes.includes(code)) deptCodes.push(code);
+  });
+  deptCodes.sort();
+  const groupByDept = deptCodes.length > 1;
+
+  const COL_GAP = 20;    // gap between nodes within a department block
+  const DEPT_GAP = 60;   // extra gap separating department blocks
+
+  // Width of each department block = max users it has on any single level.
+  const deptMaxCount = {};
+  deptCodes.forEach((code) => (deptMaxCount[code] = 0));
+  sortedLevels.forEach((rank) => {
+    const counts = {};
+    levelMap[rank].forEach((u) => {
+      const code = DEPT_KEY(u);
+      counts[code] = (counts[code] || 0) + 1;
+    });
+    deptCodes.forEach((code) => {
+      deptMaxCount[code] = Math.max(deptMaxCount[code], counts[code] || 0);
+    });
+  });
+
+  // Horizontal start offset + block width for each department.
+  const deptStartX = {};
+  const deptBlockW = {};
+  let cursor = LEFT_PAD;
+  deptCodes.forEach((code) => {
+    const blockW = Math.max(deptMaxCount[code], 1) * (NODE_W + COL_GAP) - COL_GAP;
+    deptStartX[code] = cursor;
+    deptBlockW[code] = blockW;
+    cursor += blockW + DEPT_GAP;
+  });
+
+  // Assign positions: within each level row, place each department's users
+  // inside that department's block, centered horizontally within the block.
   const posMap = {};  // user.id → {x, y}
   sortedLevels.forEach((rank, rowIdx) => {
-    const usersInLevel = levelMap[rank];
-    usersInLevel.forEach((u, colIdx) => {
-      const totalW = usersInLevel.length * (NODE_W + 20) - 20;
-      const startX = LEFT_PAD + colIdx * (NODE_W + 20);
-      const y = TOP_PAD + rowIdx * LEVEL_H;
-      posMap[u.id] = { x: startX, y };
+    const y = TOP_PAD + rowIdx * LEVEL_H;
+    const byDept = {};
+    levelMap[rank].forEach((u) => {
+      const code = DEPT_KEY(u);
+      (byDept[code] = byDept[code] || []).push(u);
+    });
+    deptCodes.forEach((code) => {
+      const group = byDept[code] || [];
+      const groupW = group.length * (NODE_W + COL_GAP) - COL_GAP;
+      const offset = Math.max(0, (deptBlockW[code] - groupW) / 2);
+      group.forEach((u, i) => {
+        posMap[u.id] = {
+          x: deptStartX[code] + offset + i * (NODE_W + COL_GAP),
+          y,
+        };
+      });
     });
   });
 
@@ -378,6 +428,31 @@ function renderDiagram(departmentCode) {
   svg.style.height = `${svgH}px`;
 
   const ns = "http://www.w3.org/2000/svg";
+
+  // Department group headers and separators (only in the combined view).
+  if (groupByDept) {
+    deptCodes.forEach((code, idx) => {
+      // Header label centered over the department block.
+      const label = document.createElementNS(ns, "text");
+      label.setAttribute("x", deptStartX[code] + deptBlockW[code] / 2);
+      label.setAttribute("y", TOP_PAD - 16);
+      label.setAttribute("class", "dept-label");
+      label.textContent = code;
+      svg.appendChild(label);
+
+      // Dashed vertical separator in the gap before each block (except first).
+      if (idx > 0) {
+        const sep = document.createElementNS(ns, "line");
+        const sx = deptStartX[code] - DEPT_GAP / 2;
+        sep.setAttribute("x1", sx);
+        sep.setAttribute("y1", TOP_PAD - 24);
+        sep.setAttribute("x2", sx);
+        sep.setAttribute("y2", svgH - 20);
+        sep.setAttribute("class", "dept-separator");
+        svg.appendChild(sep);
+      }
+    });
+  }
 
   // Level bands and labels
   sortedLevels.forEach((rank, rowIdx) => {
