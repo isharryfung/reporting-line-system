@@ -546,6 +546,10 @@ th {
   gap: 0.2rem;
 }
 
+.overlay-row label.hidden {
+  display: none;
+}
+
 .lab-summary {
   background: #f0f6ff;
   border: 1px solid #cdddf2;

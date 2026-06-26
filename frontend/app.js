@@ -1404,28 +1404,22 @@ function addOverlayRow() {
 
   const ownerLabel = document.createElement("label");
   ownerLabel.className = "overlay-owner-label";
+  const ownerCaption = document.createTextNode("");
+  ownerLabel.append(ownerCaption, ownerSel);
   const subLabel = document.createElement("label");
   subLabel.className = "overlay-sub-label";
+  const subCaption = document.createTextNode("");
+  subLabel.append(subCaption, subSel);
   const policyLabel = document.createElement("label");
   policyLabel.textContent = "Policy";
   policyLabel.appendChild(policySel);
 
   function syncLabels() {
     const meta = overlayTypes.find((o) => o.type === typeSel.value) || {};
-    ownerLabel.firstChild && ownerLabel.firstChild.remove();
-    ownerLabel.insertBefore(
-      document.createTextNode(meta.owner_label || "Authority owner"),
-      ownerSel
-    );
-    subLabel.firstChild && subLabel.firstChild.remove();
-    subLabel.insertBefore(
-      document.createTextNode(meta.substitute_label || "Substitute"),
-      subSel
-    );
+    ownerCaption.nodeValue = meta.owner_label || "Authority owner";
+    subCaption.nodeValue = meta.substitute_label || "Substitute";
     policyLabel.classList.toggle("hidden", typeSel.value !== "handover");
   }
-  ownerLabel.appendChild(ownerSel);
-  subLabel.appendChild(subSel);
   typeSel.addEventListener("change", syncLabels);
 
   const typeLabel = document.createElement("label");
@@ -1711,28 +1705,22 @@ function addTestCaseOverlayRow() {
 
   const ownerLabel = document.createElement("label");
   ownerLabel.className = "overlay-owner-label";
+  const ownerCaption = document.createTextNode("");
+  ownerLabel.append(ownerCaption, ownerSel);
   const subLabel = document.createElement("label");
   subLabel.className = "overlay-sub-label";
+  const subCaption = document.createTextNode("");
+  subLabel.append(subCaption, subSel);
   const policyLabel = document.createElement("label");
   policyLabel.textContent = "Policy";
   policyLabel.appendChild(policySel);
 
   function syncLabels() {
     const meta = overlayTypes.find((o) => o.type === typeSel.value) || {};
-    ownerLabel.firstChild && ownerLabel.firstChild.remove();
-    ownerLabel.insertBefore(
-      document.createTextNode(meta.owner_label || "Authority owner"),
-      ownerSel
-    );
-    subLabel.firstChild && subLabel.firstChild.remove();
-    subLabel.insertBefore(
-      document.createTextNode(meta.substitute_label || "Substitute"),
-      subSel
-    );
+    ownerCaption.nodeValue = meta.owner_label || "Authority owner";
+    subCaption.nodeValue = meta.substitute_label || "Substitute";
     policyLabel.classList.toggle("hidden", typeSel.value !== "handover");
   }
-  ownerLabel.appendChild(ownerSel);
-  subLabel.appendChild(subSel);
   typeSel.addEventListener("change", () => {
     syncLabels();
     runTestCaseReportingLine();
