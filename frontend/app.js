@@ -50,6 +50,9 @@ document.querySelectorAll(".tab-btn").forEach((btn) => {
     if (target === "diagram" && bootstrap) {
       renderDiagram(currentDiagramDept || bootstrap.departments[0].code);
     }
+    if (target === "testcase-diagram" && bootstrap) {
+      initTestCaseDiagram();
+    }
     if (target === "seed-editor") {
       loadSeedData();
     }
@@ -346,6 +349,29 @@ function renderDiagram(departmentCode) {
     collectChartUsers(chart, users);
   }
 
+  drawDiagram(svg, users, {
+    deptTag: departmentCode === "ALL",
+    selectedId: selectedNode ? selectedNode.id : null,
+    onNodeClick: openEditPanel,
+  });
+}
+
+// Layout + render a set of users into an SVG element. Shared by the persistent
+// Diagram Editor and the temporary Test Case Diagram. Edges are drawn from each
+// user's `manager_name`, so callers can render any working set of users.
+function drawDiagram(svg, users, options) {
+  options = options || {};
+  const deptTag = !!options.deptTag;
+  const selectedId = options.selectedId != null ? options.selectedId : null;
+  const onNodeClick = options.onNodeClick || function () {};
+  svg.innerHTML = "";  // clear
+
+  if (!users.length) {
+    svg.setAttribute("viewBox", "0 0 600 120");
+    svg.style.height = "120px";
+    return;
+  }
+
   // Group by level_rank
   const levelMap = {};
   users.forEach((u) => {
@@ -510,7 +536,7 @@ function renderDiagram(departmentCode) {
   users.forEach((u) => {
     const pos = posMap[u.id];
     const g = document.createElementNS(ns, "g");
-    g.setAttribute("class", "diagram-node" + (selectedNode && selectedNode.id === u.id ? " selected" : ""));
+    g.setAttribute("class", "diagram-node" + (selectedId != null && selectedId === u.id ? " selected" : ""));
     g.setAttribute("transform", `translate(${pos.x},${pos.y})`);
     g.dataset.userId = u.id;
 
@@ -528,7 +554,7 @@ function renderDiagram(departmentCode) {
     nameText.setAttribute("class", "node-name");
     nameText.textContent =
       u.name +
-      (departmentCode === "ALL" && u.department_code ? ` [${u.department_code}]` : "") +
+      (deptTag && u.department_code ? ` [${u.department_code}]` : "") +
       (u.is_team_lead ? " ★" : "");
     g.appendChild(nameText);
 
@@ -540,7 +566,7 @@ function renderDiagram(departmentCode) {
     levelText.textContent = `${u.level_name} (L${u.level_rank})`;
     g.appendChild(levelText);
 
-    g.addEventListener("click", () => openEditPanel(u));
+    g.addEventListener("click", () => onNodeClick(u));
     svg.appendChild(g);
   });
 }
@@ -1483,6 +1509,169 @@ async function runScenarioLab(event) {
     <div class="lab-line"><span class="lab-label">Primary level:</span> ${primary}</div>
     <div class="lab-line"><span class="lab-label">Second level:</span> ${second}</div>
   `;
+}
+
+// ---------------------------------------------------------------------------
+// TEST CASE DIAGRAM (temporary, non-persisted)
+// ---------------------------------------------------------------------------
+// A working copy of users whose `manager_id` / `manager_name` can be edited
+// in-memory without ever touching the persisted POC state. The resolved
+// reporting line is fetched from the backend and shown as wording below.
+let tcUsers = [];              // working copy of all users for this tab
+let tcDept = null;             // currently displayed department code (or "ALL")
+let tcSelected = null;         // user currently being edited
+let testCaseDiagramReady = false;
+
+function tcCloneUsers() {
+  // Deep-ish clone so edits never leak back into bootstrap.users.
+  tcUsers = (bootstrap ? bootstrap.users : []).map((u) => ({ ...u }));
+}
+
+function tcVisibleUsers() {
+  if (tcDept === "ALL") return tcUsers.slice();
+  return tcUsers.filter((u) => u.department_code === tcDept);
+}
+
+function initTestCaseDiagram() {
+  const deptSel = document.getElementById("department-select-testcase");
+  const reqSel = document.getElementById("testcase-requester");
+
+  if (!testCaseDiagramReady) {
+    deptSel.replaceChildren(
+      createOption("ALL", "All Departments"),
+      ...bootstrap.departments.map((d) => createOption(d.code, `${d.name} (${d.code})`))
+    );
+    tcDept = deptSel.value;
+
+    deptSel.addEventListener("change", (e) => {
+      tcDept = e.target.value;
+      closeTestCaseEditPanel();
+      renderTestCaseDiagram();
+    });
+    reqSel.addEventListener("change", runTestCaseReportingLine);
+    document
+      .getElementById("testcase-reset-btn")
+      .addEventListener("click", () => {
+        tcCloneUsers();
+        closeTestCaseEditPanel();
+        renderTestCaseDiagram();
+        runTestCaseReportingLine();
+      });
+    document
+      .getElementById("testcase-edit-close")
+      .addEventListener("click", closeTestCaseEditPanel);
+    document
+      .getElementById("testcase-edit-cancel")
+      .addEventListener("click", closeTestCaseEditPanel);
+    document
+      .getElementById("testcase-edit-apply")
+      .addEventListener("click", applyTestCaseManager);
+
+    testCaseDiagramReady = true;
+  }
+
+  // Always start from a fresh, untouched working copy when entering the tab.
+  tcCloneUsers();
+  reqSel.replaceChildren(...userOptionEls());
+  closeTestCaseEditPanel();
+  renderTestCaseDiagram();
+  runTestCaseReportingLine();
+}
+
+function renderTestCaseDiagram() {
+  const svg = document.getElementById("testcase-svg");
+  if (!svg) return;
+  drawDiagram(svg, tcVisibleUsers(), {
+    deptTag: tcDept === "ALL",
+    selectedId: tcSelected ? tcSelected.id : null,
+    onNodeClick: openTestCaseEditPanel,
+  });
+}
+
+function openTestCaseEditPanel(user) {
+  tcSelected = user;
+  const panel = document.getElementById("testcase-edit-panel");
+  const title = document.getElementById("testcase-edit-title");
+  const managerSel = document.getElementById("testcase-edit-manager");
+  hideError(document.getElementById("testcase-edit-error"));
+
+  title.textContent = `Reporting manager for ${user.name}`;
+  // Anyone except the user themselves may be chosen as their manager.
+  const options = [createOption("", "— none / top-level —")];
+  tcUsers
+    .filter((u) => u.id !== user.id)
+    .forEach((u) =>
+      options.push(
+        createOption(u.id, `${u.name} — ${u.department_code} / ${u.level_name}`)
+      )
+    );
+  managerSel.replaceChildren(...options);
+  managerSel.value = user.manager_id != null ? String(user.manager_id) : "";
+
+  panel.classList.remove("hidden");
+  renderTestCaseDiagram();
+}
+
+function closeTestCaseEditPanel() {
+  tcSelected = null;
+  const panel = document.getElementById("testcase-edit-panel");
+  if (panel) panel.classList.add("hidden");
+  renderTestCaseDiagram();
+}
+
+function applyTestCaseManager() {
+  if (!tcSelected) return;
+  const managerSel = document.getElementById("testcase-edit-manager");
+  const raw = managerSel.value;
+  const user = tcUsers.find((u) => u.id === tcSelected.id);
+  if (!user) return;
+
+  if (raw === "") {
+    user.manager_id = null;
+    user.manager_name = null;
+  } else {
+    const managerId = Number(raw);
+    const manager = tcUsers.find((u) => u.id === managerId);
+    user.manager_id = managerId;
+    user.manager_name = manager ? manager.name : null;
+  }
+  closeTestCaseEditPanel();
+  runTestCaseReportingLine();
+}
+
+async function runTestCaseReportingLine() {
+  const reqSel = document.getElementById("testcase-requester");
+  const wordingEl = document.getElementById("testcase-wording");
+  const stepsEl = document.getElementById("testcase-steps");
+  if (!reqSel || !reqSel.value) return;
+
+  // Send the full temporary diagram as primary manager assignments.
+  const edges = tcUsers.map((u) => ({
+    user_id: u.id,
+    manager_id: u.manager_id != null ? u.manager_id : null,
+  }));
+
+  const resp = await fetch("/api/simulate-reporting-line", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ requester_id: Number(reqSel.value), edges }),
+  });
+  const result = await resp.json();
+  stepsEl.replaceChildren();
+
+  if (result.status !== "success") {
+    wordingEl.classList.add("testcase-error");
+    wordingEl.textContent = result.error || "Could not resolve the reporting line.";
+    return;
+  }
+  wordingEl.classList.remove("testcase-error");
+  wordingEl.textContent = result.wording;
+
+  result.steps.forEach((step) => {
+    const li = document.createElement("li");
+    li.textContent = `${step.user} → ${step.manager_label}`;
+    stepsEl.appendChild(li);
+  });
 }
 
 // ---------------------------------------------------------------------------

@@ -235,6 +235,28 @@ automatically use the updated state.  Example flow:
 2. Switch to **Simulation**, select Peter as requester and Annual Leave.
 3. The chain now shows Nina → Fiona instead of Mary → Fiona.
 
+## Test Case Diagram (temporary reporting-line builder)
+
+The **Test Case Diagram** tab lets you build a reporting-line diagram for a test
+case, edit it temporarily, and read the resolved reporting line in plain wording
+under the diagram — without mutating the persisted POC state.
+
+1. Click the **Test Case Diagram** tab.
+2. Optionally choose a **Department** (or **All Departments**) to scope the
+   diagram.
+3. **Click any node** to open the temporary edit panel and change who that
+   person **reports to**. The change updates the diagram immediately but is
+   **not saved** to the POC state.
+4. Choose a **Requester**. The reporting line is walked from the requester up to
+   the top and described in plain wording beneath the diagram, with each step
+   listed (e.g. `Peter → Mary (FIN Senior Manager, L5)`).
+5. Circular reporting lines introduced by the edits are detected and reported.
+6. **Reset diagram** restores the official reporting lines.
+
+The diagram edits are sent as primary manager assignments to
+`POST /api/simulate-reporting-line`, applied inside a transaction that is always
+rolled back, so the test-case diagram never changes persisted data.
+
 ## Scenario Lab (advanced test-case simulator)
 
 The **Scenario Lab** tab lets you construct advanced overlay test cases on top

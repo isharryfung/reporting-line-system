@@ -1556,6 +1556,180 @@ def simulate_scenario_overlay(
         session.close()
 
 
+# ---------------------------------------------------------------------------
+# Test Case Diagram: ephemeral reporting-line simulation
+# ---------------------------------------------------------------------------
+
+def _user_line_label(user: User) -> str:
+    """Human-readable label for a user used in reporting-line wording."""
+    top = ", top level" if user.dept_level.is_top_level else ""
+    return (
+        f"{user.name} ({user.department.code} "
+        f"{user.dept_level.level_name}, L{user.dept_level.level_rank}{top})"
+    )
+
+
+def _apply_reporting_line_edges(session: Session, edges: list[dict[str, Any]]) -> None:
+    """Apply temporary primary reporting-line edits inside the open transaction.
+
+    Each edge is ``{"user_id": int, "manager_id": int | None}``. The existing
+    active primary line for the user is deactivated, and when a manager is given
+    a fresh active primary line is added. Nothing is committed by this helper.
+    """
+    for edge in edges or []:
+        user_id = edge.get("user_id")
+        if user_id is None:
+            raise ValueError("Each edge requires a user_id.")
+        user_id = int(user_id)
+        user = session.get(User, user_id)
+        if user is None:
+            raise ValueError(f"User {user_id} not found.")
+
+        existing_lines = (
+            session.query(ReportingLine)
+            .filter(
+                ReportingLine.user_id == user_id,
+                ReportingLine.is_primary.is_(True),
+                ReportingLine.is_active.is_(True),
+            )
+            .all()
+        )
+        for line in existing_lines:
+            line.is_active = False
+
+        manager_id = edge.get("manager_id")
+        if manager_id in (None, ""):
+            continue
+        manager_id = int(manager_id)
+        if manager_id == user_id:
+            raise ValueError(f"{user.name} cannot report to themselves.")
+        manager = session.get(User, manager_id)
+        if manager is None:
+            raise ValueError(f"Manager {manager_id} not found.")
+        session.add(
+            ReportingLine(
+                user_id=user_id,
+                manager_id=manager_id,
+                dept_id=user.dept_id,
+                is_primary=True,
+            )
+        )
+
+
+def simulate_reporting_line(
+    requester_id: int,
+    edges: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Resolve a requester's reporting line for a temporarily edited diagram.
+
+    The ``edges`` describe the diagram the user built on the Test Case Diagram
+    tab as primary manager assignments. They are applied inside a transaction
+    that is always rolled back, so editing the test-case diagram never mutates
+    the persisted POC state. The reporting line is walked from the requester up
+    to the top and returned both as structured steps and as plain wording.
+    """
+    edges = edges or []
+    session = _get_session()
+    try:
+        requester = session.get(User, requester_id)
+        if requester is None:
+            return {"status": "error", "error": f"Requester {requester_id} not found."}
+
+        try:
+            _apply_reporting_line_edges(session, edges)
+        except ValueError as exc:
+            return {"status": "error", "error": str(exc)}
+        session.flush()
+
+        # Walk the primary reporting line from the requester to the top, guarding
+        # against cycles introduced by the temporary edits.
+        steps: list[dict[str, Any]] = []
+        visited: set[int] = set()
+        current = requester
+        cycle = False
+        while True:
+            if current.id in visited:
+                cycle = True
+                break
+            visited.add(current.id)
+            line = (
+                session.query(ReportingLine)
+                .filter(
+                    ReportingLine.user_id == current.id,
+                    ReportingLine.is_primary.is_(True),
+                    ReportingLine.is_active.is_(True),
+                )
+                .first()
+            )
+            if line is None:
+                break
+            manager = session.get(User, line.manager_id)
+            if manager is None:
+                break
+            steps.append(
+                {
+                    "user": current.name,
+                    "user_id": current.id,
+                    "manager": manager.name,
+                    "manager_id": manager.id,
+                    "manager_label": _user_line_label(manager),
+                    "manager_is_active": manager.is_active,
+                    "manager_is_top_level": manager.dept_level.is_top_level,
+                }
+            )
+            current = manager
+
+        if cycle:
+            return {
+                "status": "error",
+                "error": (
+                    "Circular reporting line detected: the edited diagram forms a "
+                    "loop, so the reporting line cannot be resolved."
+                ),
+            }
+
+        top_user = current
+        wording = _reporting_line_wording(requester, steps, top_user)
+        return {
+            "status": "success",
+            "requester": requester.name,
+            "requester_id": requester.id,
+            "requester_label": _user_line_label(requester),
+            "steps": steps,
+            "top_of_line": top_user.name,
+            "top_of_line_label": _user_line_label(top_user),
+            "wording": wording,
+        }
+    except Exception as exc:  # pragma: no cover - defensive
+        return {"status": "error", "error": str(exc)}
+    finally:
+        # Never persist test-case diagram edits.
+        session.rollback()
+        session.close()
+
+
+def _reporting_line_wording(
+    requester: User,
+    steps: list[dict[str, Any]],
+    top_user: User,
+) -> str:
+    """Compose a plain-language description of a resolved reporting line."""
+    if not steps:
+        return (
+            f"{_user_line_label(requester)} is at the top of this reporting line "
+            f"and has no manager."
+        )
+
+    sentences = []
+    sentences.append(f"{_user_line_label(requester)} reports to {steps[0]['manager_label']}.")
+    for step in steps[1:]:
+        sentences.append(f"{step['user']} in turn reports to {step['manager_label']}.")
+    sentences.append(
+        f"{_user_line_label(top_user)} is at the top of this reporting line."
+    )
+    return " ".join(sentences)
+
+
 class ManualTestRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
@@ -1664,6 +1838,16 @@ class ManualTestRequestHandler(BaseHTTPRequestHandler):
                     overlays=payload.get("overlays"),
                     request_at=payload.get("request_at"),
                     project_code=payload.get("project_code"),
+                )
+            )
+            return
+
+        if path == "/api/simulate-reporting-line":
+            payload = self._read_json_body()
+            self._send_json(
+                simulate_reporting_line(
+                    requester_id=int(payload["requester_id"]),
+                    edges=payload.get("edges"),
                 )
             )
             return

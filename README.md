@@ -51,7 +51,7 @@ Then open <http://127.0.0.1:8000>.
 
 ## Frontend POC
 
-The browser UI is organized into six tabs:
+The browser UI is organized into seven tabs:
 
 ### Overview tab
 - Inspect seed users showing level, rank, org-unit, and team-lead status
@@ -69,6 +69,17 @@ The browser UI is organized into six tabs:
   - Edit name, email, level, org-unit, team-lead flag, and primary manager
   - Saves are immediately reflected in the diagram and simulation
   - Circular reporting lines are detected and blocked with a clear error
+
+### Test Case Diagram tab
+- Build a reporting-line diagram specifically to test a case
+- **Click any node** to **temporarily** change who it reports to — edits here are
+  **never saved** to the POC state (they are simulated in a rolled-back transaction)
+- Choose **All Departments** to build the case across every department at once
+- Pick a **requester** and the resolved reporting line is shown as plain
+  **wording under the diagram** (e.g. "Peter reports to Mary, who reports to
+  Fiona … Fiona is at the top of this reporting line")
+- Circular reporting lines created while editing are detected and reported
+- **Reset diagram** restores the official reporting lines
 
 ### Seed Data Editor tab
 - Add / edit / remove **users**, **levels**, **departments**, **actions**, and

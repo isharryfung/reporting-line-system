@@ -23,6 +23,7 @@
     <nav class="tab-bar">
       <button class="tab-btn active" data-tab="overview">Overview</button>
       <button class="tab-btn" data-tab="diagram">Diagram Editor</button>
+      <button class="tab-btn" data-tab="testcase-diagram">Test Case Diagram</button>
       <button class="tab-btn" data-tab="seed-editor">Seed Data Editor</button>
       <button class="tab-btn" data-tab="simulation">Simulation</button>
       <button class="tab-btn" data-tab="scenario-lab">Scenario Lab</button>
@@ -118,6 +119,65 @@
                 </div>
               </form>
             </aside>
+          </div>
+        </section>
+      </div>
+
+      <!-- ===== TEST CASE DIAGRAM TAB ===== -->
+      <div id="tab-testcase-diagram" class="tab-content hidden">
+        <section class="card">
+          <div class="diagram-header">
+            <h2>Test Case Diagram</h2>
+            <p class="hint">
+              Build a reporting-line diagram to test a case. Click any node to
+              <strong>temporarily</strong> change its reporting manager — edits here are
+              <strong>never saved</strong> to the POC state. Pick a requester and the
+              resolved reporting line is described in plain wording under the diagram.
+            </p>
+            <div class="testcase-controls">
+              <label class="inline-label">
+                Department
+                <select id="department-select-testcase"></select>
+              </label>
+              <label class="inline-label">
+                Requester
+                <select id="testcase-requester"></select>
+              </label>
+              <button type="button" id="testcase-reset-btn" class="btn-secondary">
+                Reset diagram
+              </button>
+            </div>
+          </div>
+          <div class="diagram-container">
+            <svg id="testcase-svg" width="100%" height="540"></svg>
+          </div>
+
+          <!-- Reporting-line wording result, shown under the diagram -->
+          <div id="testcase-result" class="testcase-result">
+            <h3>Reporting line result</h3>
+            <p id="testcase-wording" class="testcase-wording">
+              Pick a requester to see the reporting line result.
+            </p>
+            <ol id="testcase-steps" class="testcase-steps"></ol>
+          </div>
+
+          <!-- Temporary manager edit panel for the test-case diagram -->
+          <div id="testcase-edit-panel" class="testcase-edit-panel hidden">
+            <div class="edit-panel-header">
+              <h3 id="testcase-edit-title">Edit reporting manager</h3>
+              <button type="button" id="testcase-edit-close" class="btn-icon">✕</button>
+            </div>
+            <label>
+              Reports to (temporary)
+              <select id="testcase-edit-manager">
+                <option value="">— none / top-level —</option>
+              </select>
+            </label>
+            <div id="testcase-edit-error" class="error-box hidden"></div>
+            <div class="button-row">
+              <button type="button" id="testcase-edit-apply">Apply</button>
+              <button type="button" id="testcase-edit-cancel" class="btn-secondary">Cancel</button>
+            </div>
           </div>
         </section>
       </div>

@@ -574,3 +574,72 @@ th {
   color: #b3261e;
   font-weight: 600;
 }
+
+/* ---------------------------------------------------------------------------
+   Test Case Diagram
+   --------------------------------------------------------------------------- */
+.testcase-controls {
+  align-items: flex-end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 0.75rem;
+}
+
+.testcase-result {
+  background: #f0f6ff;
+  border: 1px solid #cdddf2;
+  border-radius: 12px;
+  margin-top: 1rem;
+  padding: 1rem 1.25rem;
+}
+
+.testcase-result h3 {
+  margin: 0 0 0.5rem;
+}
+
+.testcase-wording {
+  font-size: 1.05rem;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.testcase-wording.testcase-error {
+  color: #b3261e;
+  font-weight: 600;
+}
+
+.testcase-steps {
+  color: #466089;
+  margin: 0.75rem 0 0;
+  padding-left: 1.5rem;
+}
+
+.testcase-steps li {
+  margin: 0.2rem 0;
+}
+
+.testcase-edit-panel {
+  background: #ffffff;
+  border: 1px solid #d7e5f7;
+  border-radius: 12px;
+  margin-top: 1rem;
+  max-width: 420px;
+  padding: 1rem 1.25rem;
+}
+
+.testcase-edit-panel.hidden {
+  display: none;
+}
+
+.testcase-edit-panel label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+
+.testcase-edit-panel select {
+  display: block;
+  margin-top: 0.35rem;
+  width: 100%;
+}

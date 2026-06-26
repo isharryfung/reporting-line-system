@@ -24,6 +24,7 @@ from src.manual_test_app import (
     simulate_action_request,
     simulate_advanced_scenario,
     simulate_scenario_overlay,
+    simulate_reporting_line,
     simulate_team_lead_permission,
 )
 
@@ -420,3 +421,70 @@ def test_bootstrap_exposes_overlay_simulation_metadata():
     assert {"acting", "delegation", "peer_coverage", "handover"} <= types
     assert "both_required" in payload["handover_policies"]
 
+
+# ---------------------------------------------------------------------------
+# Test Case Diagram: ephemeral reporting-line simulation
+# ---------------------------------------------------------------------------
+
+def test_simulate_reporting_line_official_chain_produces_wording():
+    ids = _user_ids()
+    result = simulate_reporting_line(requester_id=ids["Peter"], edges=[])
+    assert result["status"] == "success"
+    managers = [step["manager"] for step in result["steps"]]
+    assert managers == ["Mary", "Fiona"]
+    assert result["top_of_line"] == "Fiona"
+    assert "reports to" in result["wording"]
+    assert "top of this reporting line" in result["wording"]
+
+
+def test_simulate_reporting_line_applies_temporary_edge():
+    ids = _user_ids()
+    result = simulate_reporting_line(
+        requester_id=ids["Peter"],
+        edges=[{"user_id": ids["Peter"], "manager_id": ids["Nina"]}],
+    )
+    assert result["status"] == "success"
+    managers = [step["manager"] for step in result["steps"]]
+    assert managers == ["Nina", "Fiona"]
+    assert "Nina" in result["wording"]
+
+
+def test_simulate_reporting_line_edits_are_not_persisted():
+    ids = _user_ids()
+    simulate_reporting_line(
+        requester_id=ids["Peter"],
+        edges=[{"user_id": ids["Peter"], "manager_id": ids["Nina"]}],
+    )
+    # The official line must be untouched after the rolled-back simulation.
+    plain = simulate_reporting_line(requester_id=ids["Peter"], edges=[])
+    assert plain["steps"][0]["manager"] == "Mary"
+
+
+def test_simulate_reporting_line_top_level_user_has_no_manager():
+    ids = _user_ids()
+    result = simulate_reporting_line(requester_id=ids["Fiona"], edges=[])
+    assert result["status"] == "success"
+    assert result["steps"] == []
+    assert result["top_of_line"] == "Fiona"
+    assert "no manager" in result["wording"]
+
+
+def test_simulate_reporting_line_detects_cycle():
+    ids = _user_ids()
+    result = simulate_reporting_line(
+        requester_id=ids["Peter"],
+        edges=[
+            {"user_id": ids["Mary"], "manager_id": ids["Peter"]},
+        ],
+    )
+    assert result["status"] == "error"
+    assert "Circular" in result["error"]
+
+
+def test_simulate_reporting_line_rejects_self_manager():
+    ids = _user_ids()
+    result = simulate_reporting_line(
+        requester_id=ids["Peter"],
+        edges=[{"user_id": ids["Peter"], "manager_id": ids["Peter"]}],
+    )
+    assert result["status"] == "error"
