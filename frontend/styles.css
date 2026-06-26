@@ -363,6 +363,11 @@ th {
   stroke-linecap: round;
 }
 
+/* Reporting line of the currently selected user is emphasised (bold). */
+.diagram-edge.highlighted {
+  stroke-width: 4;
+}
+
 .level-band {
   fill: none;
   stroke: #dde5f0;

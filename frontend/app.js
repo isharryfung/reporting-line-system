@@ -590,6 +590,10 @@ function drawDiagram(svg, users, options) {
     }
     edge.setAttribute("class", "diagram-edge");
     edge.style.stroke = color;
+    // Record the child→parent relationship so the selected user's reporting
+    // line (the upward chain of edges) can be emphasised on demand.
+    edge.dataset.childId = u.id;
+    edge.dataset.parentId = manager.id;
     // Arrow marker, color-matched to this edge's stroke.
     edge.setAttribute("marker-end", `url(#${rankArrowId(color)})`);
     edgeGroup.appendChild(edge);
@@ -645,6 +649,33 @@ function drawDiagram(svg, users, options) {
     g.addEventListener("click", () => onNodeClick(u));
     svg.appendChild(g);
   });
+
+  // Emphasise the selected user's reporting line (the upward chain of edges).
+  highlightReportingLine(svg, selectedId);
+}
+
+// Bold the reporting-line chain for the given user by walking the rendered
+// edges upward (child → parent) and toggling the `highlighted` class. Passing a
+// null/undefined userId simply clears any existing emphasis. Operates purely on
+// the edges' data-child-id / data-parent-id attributes so it works for any SVG
+// produced by drawDiagram without needing the original users array.
+function highlightReportingLine(svg, userId) {
+  if (!svg) return;
+  const edges = Array.from(svg.querySelectorAll(".diagram-edge"));
+  edges.forEach((e) => e.classList.remove("highlighted"));
+  if (userId == null) return;
+  const edgeByChild = {};
+  edges.forEach((e) => {
+    edgeByChild[e.dataset.childId] = e;
+  });
+  let current = String(userId);
+  const visited = new Set();
+  while (edgeByChild[current] && !visited.has(current)) {
+    visited.add(current);
+    const edge = edgeByChild[current];
+    edge.classList.add("highlighted");
+    current = edge.dataset.parentId;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -678,6 +709,8 @@ function openEditPanel(user) {
   document.querySelectorAll(".diagram-node").forEach((n) => {
     n.classList.toggle("selected", Number(n.dataset.userId) === user.id);
   });
+  // Bold this user's reporting line in the diagram.
+  highlightReportingLine(document.getElementById("diagram-svg"), user.id);
 
   // Populate level options from seed data
   loadSeedDataIfNeeded().then(() => {
@@ -720,6 +753,7 @@ function closeEditPanel() {
   editPanel.classList.add("hidden");
   selectedNode = null;
   document.querySelectorAll(".diagram-node").forEach((n) => n.classList.remove("selected"));
+  highlightReportingLine(document.getElementById("diagram-svg"), null);
   hideError(editError);
 }
 
