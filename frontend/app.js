@@ -368,6 +368,7 @@ function drawDiagram(svg, users, options) {
 
   if (!users.length) {
     svg.setAttribute("viewBox", "0 0 600 120");
+    svg.style.width = "600px";
     svg.style.height = "120px";
     return;
   }
@@ -451,6 +452,11 @@ function drawDiagram(svg, users, options) {
   const svgW = Math.max(maxX + LEFT_PAD, 600);
   const svgH = maxY + 60;
   svg.setAttribute("viewBox", `0 0 ${svgW} ${svgH}`);
+  // Render at natural pixel size so large departments (e.g. ITSO's 30 staff and
+  // HRO's 20 staff) are not squished to fit the container width. The
+  // `.diagram-container` uses `overflow: auto`, so the full-size diagram scrolls
+  // horizontally and vertically while keeping every node readable.
+  svg.style.width = `${svgW}px`;
   svg.style.height = `${svgH}px`;
 
   const ns = "http://www.w3.org/2000/svg";
