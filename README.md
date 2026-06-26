@@ -39,10 +39,16 @@ Then open <http://127.0.0.1:8000>.
 The browser UI lets you:
 
 - inspect seed users for Finance and HR
+- customize configurable field records (users, levels, departments, org-units, actions, routing rules, reporting lines, fallback rules, and overlay records)
 - switch between department org charts
-- simulate action submission and see the generated approval chain
+- edit diagram/org-structure data (department, level, manager, org-unit, and team-lead assignment)
+- simulate action submission and see the generated approval chain, approval levels, fallback usage, and overlays applied
 - run predefined advanced reporting-line scenarios
 - simulate team-lead edit permission decisions
+
+The manual test server now uses a persistent local SQLite file at
+`/tmp/reporting_line_manual_test.db`, so configurable field and diagram changes
+immediately affect follow-up simulations.
 
 ## Key sample scenario
 

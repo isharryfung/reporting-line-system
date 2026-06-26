@@ -30,6 +30,7 @@ src/
 ├── sample_data.py
 └── services/
     ├── approval.py
+    ├── configuration.py
     ├── org_chart.py
     ├── permissions.py
     └── routing.py
@@ -130,6 +131,25 @@ A team lead may edit reporting-line data only when all conditions are true:
 - target is not top-level/protected
 - target is not the editor
 
+### Configurable data + editable diagram
+
+The manual frontend exposes API-backed controls for:
+
+- configurable field CRUD/activate/deactivate for users, levels, departments,
+  org-units, actions, routing rules, reporting lines, fallback rules, and
+  supported overlay records
+- diagram edits for user department, level, manager, org-unit, and team-lead
+  assignment
+
+Diagram edits reuse business validations:
+
+- one active primary manager per user
+- no circular reporting
+- protected top-level users cannot be moved/demoted
+- team lead editor permissions are enforced when editor is provided
+- target department/level/org-unit combinations must be valid
+- inactive managers are rejected for active primary routing
+
 ### Supported overlay policies
 
 - **Acting** — replaces an approver during a valid date range with optional
@@ -184,3 +204,10 @@ Open <http://127.0.0.1:8000>.
 | BC-22 | Circular reporting chain | Requester Peter, action `annual_leave` | Extra line Fiona → Peter creates a cycle | Error for circular reporting | API/service raises clear cycle error |
 | BC-23 | Inactive manager/user | Requester Peter or inactive requester Peter, action `annual_leave` | Mary is inactive or Peter is inactive | Error for inactive manager/requester | API/service raises clear inactive-user error |
 | BC-24 | Multiple active primary managers | Requester Peter, action `annual_leave` | Peter has two active primary reporting lines | Error for multiple active primary managers | API/service raises explicit single-primary-manager error |
+| BC-25 | Custom user creation/editing | Create user Iris and update fields | Valid department, level, org-unit, and manager exist | User persisted and editable | Bootstrap/config APIs expose updated user immediately |
+| BC-26 | Custom level/department/org-unit/action routing configuration | Create level, org-unit, action type, and routing rule | Referenced records exist | New configurable records persisted | Routing simulation can run using new rule |
+| BC-27 | Diagram edit: change user position/department/org-unit | Move Peter to HR Advisory and HR level | Selected level and org-unit belong to HR | Edit succeeds | Org chart and routing reflect new placement |
+| BC-28 | Diagram edit: change primary manager | Reassign Peter's manager | New manager active, no cycle | Edit succeeds | Approval chain uses new manager |
+| BC-29 | Diagram edit blocked: circular reporting | Set Fiona's manager to Peter | Fiona is in Peter's chain | Clear validation error | Reporting line unchanged |
+| BC-30 | Diagram edit blocked: protected highest level | Demote Fiona | Fiona is protected top-level | Clear validation error | User remains at protected top level |
+| BC-31 | Routing simulation updates after field changes | Enable second-level requirement for Finance sick leave | Routing rule updated in configurable API | Chain adds second-level approver | Simulation output shows updated levels/fallback/overlay summary |

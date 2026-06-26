@@ -15,6 +15,20 @@ const seedUsers = document.querySelector("#seed-users");
 const notes = document.querySelector("#notes");
 const orgChart = document.querySelector("#org-chart");
 const businessCaseBody = document.querySelector("#business-case-body");
+const diagramForm = document.querySelector("#diagram-form");
+const diagramEditorSelect = document.querySelector("#diagram-editor-select");
+const diagramTargetSelect = document.querySelector("#diagram-target-select");
+const diagramDepartmentSelect = document.querySelector("#diagram-department-select");
+const diagramLevelSelect = document.querySelector("#diagram-level-select");
+const diagramManagerSelect = document.querySelector("#diagram-manager-select");
+const diagramOrgUnitSelect = document.querySelector("#diagram-org-unit-select");
+const diagramTeamLeadInput = document.querySelector("#diagram-team-lead-input");
+const diagramOutput = document.querySelector("#diagram-output");
+const configForm = document.querySelector("#config-form");
+const configEntitySelect = document.querySelector("#config-entity-select");
+const configOperationSelect = document.querySelector("#config-operation-select");
+const configPayloadInput = document.querySelector("#config-payload-input");
+const configOutput = document.querySelector("#config-output");
 
 let bootstrap = null;
 
@@ -122,8 +136,21 @@ function renderOrgChart(chart) {
 
   orgChart.innerHTML = `
     <p><strong>Department fallback approver:</strong> ${fallback}</p>
+    <p><strong>Diagram editor supports:</strong> manager, department, level, team and team-lead updates.</p>
     <div class="org-unit-grid">${units}${unassigned}</div>
   `;
+}
+
+function renderSimulationResult(payload) {
+  const lines = [];
+  lines.push(renderPrettyJson(payload));
+  if (payload.status === "success") {
+    lines.push("");
+    lines.push(`approval_levels: ${payload.approval_levels}`);
+    lines.push(`fallback_used: ${payload.fallback_used}`);
+    lines.push(`overlays_applied: ${payload.overlays_applied.join(", ") || "none"}`);
+  }
+  return lines.join("\n");
 }
 
 function renderAdvancedScenarios(items) {
@@ -192,6 +219,34 @@ async function loadBootstrap() {
     )
   );
 
+  const userOptions = bootstrap.users.map((user) =>
+    createOption(user.id, `${user.name} — ${user.department_code} / ${user.level_name}`)
+  );
+  diagramEditorSelect.replaceChildren(...userOptions.map((option) => option.cloneNode(true)));
+  diagramTargetSelect.replaceChildren(...userOptions.map((option) => option.cloneNode(true)));
+  diagramManagerSelect.replaceChildren(
+    createOption("", "No change"),
+    ...userOptions.map((option) => option.cloneNode(true))
+  );
+  diagramDepartmentSelect.replaceChildren(
+    createOption("", "No change"),
+    ...bootstrap.configurable_data.departments.map((department) =>
+      createOption(department.id, `${department.name} (${department.code})`)
+    )
+  );
+  diagramLevelSelect.replaceChildren(
+    createOption("", "No change"),
+    ...bootstrap.configurable_data.dept_levels.map((level) =>
+      createOption(level.id, `${level.level_name} (dept ${level.dept_id})`)
+    )
+  );
+  diagramOrgUnitSelect.replaceChildren(
+    createOption("", "No change"),
+    ...bootstrap.configurable_data.org_units.map((orgUnit) =>
+      createOption(orgUnit.id, `${orgUnit.name} (${orgUnit.code})`)
+    )
+  );
+
   await loadOrgChart(departmentSelect.value);
 }
 
@@ -210,7 +265,7 @@ routingForm.addEventListener("submit", async (event) => {
     }),
   });
   const payload = await response.json();
-  routingOutput.textContent = renderPrettyJson(payload);
+  routingOutput.textContent = renderSimulationResult(payload);
 });
 
 permissionForm.addEventListener("submit", async (event) => {
@@ -225,6 +280,52 @@ permissionForm.addEventListener("submit", async (event) => {
   });
   const payload = await response.json();
   permissionOutput.textContent = renderPrettyJson(payload);
+});
+
+diagramForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const selectedOrgUnit = diagramOrgUnitSelect.value
+    ? [Number(diagramOrgUnitSelect.value)]
+    : null;
+  const response = await fetch("/api/diagram-edit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      editor_user_id: Number(diagramEditorSelect.value),
+      target_user_id: Number(diagramTargetSelect.value),
+      dept_id: diagramDepartmentSelect.value ? Number(diagramDepartmentSelect.value) : null,
+      dept_level_id: diagramLevelSelect.value ? Number(diagramLevelSelect.value) : null,
+      manager_id: diagramManagerSelect.value ? Number(diagramManagerSelect.value) : null,
+      org_unit_ids: selectedOrgUnit,
+      is_team_lead: diagramTeamLeadInput.checked,
+    }),
+  });
+  const payload = await response.json();
+  diagramOutput.textContent = renderPrettyJson(payload);
+  await loadBootstrap();
+});
+
+configForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  let payload;
+  try {
+    payload = JSON.parse(configPayloadInput.value);
+  } catch (error) {
+    configOutput.textContent = `Invalid JSON payload: ${error.message}`;
+    return;
+  }
+  const response = await fetch("/api/configurable-data", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      entity: configEntitySelect.value,
+      operation: configOperationSelect.value,
+      payload,
+    }),
+  });
+  const result = await response.json();
+  configOutput.textContent = renderPrettyJson(result);
+  await loadBootstrap();
 });
 
 loadBootstrap();

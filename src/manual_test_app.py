@@ -10,8 +10,15 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from src.database import create_engine_sqlite, get_session, init_db
+from src.models import Department
 from src.sample_data import seed_sample_data
 from src.services.approval import submit_request
+from src.services.configuration import (
+    ConfigurationError,
+    apply_configuration_change,
+    apply_diagram_edit,
+    serialize_configurable_data,
+)
 from src.services.org_chart import get_department_org_chart
 from src.services.permissions import validate_team_lead_edit_permission
 from src.services.routing import (
@@ -145,6 +152,54 @@ BUSINESS_CASES = [
         "preconditions": "Applicable delegation exists.",
         "expected_output": "Clear error.",
         "pass_criteria": "Routing rejects self-delegation.",
+    },
+    {
+        "id": "BC-16",
+        "scenario": "Custom user record can be created and edited from configurable data API.",
+        "input": "Create user Iris then edit level/email fields.",
+        "preconditions": "Valid department, level, org-unit, and manager IDs are provided.",
+        "expected_output": "User record is persisted and immediately selectable for simulation.",
+        "pass_criteria": "Subsequent bootstrap payload includes updated user fields.",
+    },
+    {
+        "id": "BC-17",
+        "scenario": "Custom level/action/routing records can be configured.",
+        "input": "Create department level, action type, and routing rule.",
+        "preconditions": "Entity IDs are valid and rule references active action + department.",
+        "expected_output": "Config records are persisted.",
+        "pass_criteria": "Routing simulation uses the updated approval-step requirement.",
+    },
+    {
+        "id": "BC-18",
+        "scenario": "Diagram edit can change target user's position and org-unit.",
+        "input": "Target Peter moved to another level/org-unit.",
+        "preconditions": "Selected level and org-unit belong to selected department.",
+        "expected_output": "Target user's assignment is updated.",
+        "pass_criteria": "Org chart and configurable-data payload both show new assignment.",
+    },
+    {
+        "id": "BC-19",
+        "scenario": "Diagram edit can change target user's primary manager.",
+        "input": "Target Peter re-assigned from Mary to Nina.",
+        "preconditions": "New manager is active and no circular chain is formed.",
+        "expected_output": "New active primary manager is applied.",
+        "pass_criteria": "Routing simulation follows the updated manager.",
+    },
+    {
+        "id": "BC-20",
+        "scenario": "Diagram edit blocks circular reporting chain.",
+        "input": "Attempt to set Fiona's manager to Peter.",
+        "preconditions": "Fiona is already above Peter in the reporting chain.",
+        "expected_output": "Edit is rejected with circular reporting message.",
+        "pass_criteria": "No changes committed to reporting lines.",
+    },
+    {
+        "id": "BC-21",
+        "scenario": "Diagram edit blocks protected highest level modification.",
+        "input": "Attempt to change Fiona from top level to another level.",
+        "preconditions": "Fiona has protected highest-level flag.",
+        "expected_output": "Edit is rejected.",
+        "pass_criteria": "Protected top-level user remains unchanged.",
     },
 ]
 
@@ -292,16 +347,12 @@ def simulate_action_request(
                 request_at=parsed_request_at,
                 project_code=project_code,
             )
-            response = approval_chain_to_dict(chain)
-            response.update(
-                {
-                    "status": "success",
-                    "request_id": request.id,
-                    "request_at": request_at,
-                    "project_code": project_code,
-                }
+            return _format_simulation_response(
+                chain=chain,
+                request_id=request.id,
+                request_at=request_at,
+                project_code=project_code,
             )
-            return response
         except RoutingError as exc:
             return {"status": "error", "error": str(exc)}
 
@@ -338,12 +389,11 @@ def simulate_advanced_scenario(scenario_id: str) -> dict[str, Any]:
 
 def simulate_team_lead_permission(editor_id: int, target_user_id: int) -> dict[str, Any]:
     with _seeded_session() as (_, session, _):
-        decision = validate_team_lead_edit_permission(
+        return _permission_result(
             session,
             editor_id=editor_id,
             target_user_id=target_user_id,
         )
-        return {"allowed": decision.allowed, "reason": decision.reason}
 
 
 def _serialize_user(user: Any) -> dict[str, Any]:
@@ -368,6 +418,15 @@ def _serialize_user(user: Any) -> dict[str, Any]:
     }
 
 
+def _permission_result(session: Any, editor_id: int, target_user_id: int) -> dict[str, Any]:
+    decision = validate_team_lead_edit_permission(
+        session,
+        editor_id=editor_id,
+        target_user_id=target_user_id,
+    )
+    return {"allowed": decision.allowed, "reason": decision.reason}
+
+
 class _SeededSession:
     def __enter__(self) -> tuple[Any, Any, dict[str, Any]]:
         self.engine = create_engine_sqlite(":memory:")
@@ -383,6 +442,145 @@ class _SeededSession:
 
 def _seeded_session() -> _SeededSession:
     return _SeededSession()
+
+
+class _PersistentState:
+    def __init__(self) -> None:
+        self.engine = create_engine_sqlite("/tmp/reporting_line_manual_test.db")
+        init_db(self.engine)
+        session = get_session(self.engine)
+        try:
+            if session.query(Department).count() == 0:
+                seed_sample_data(session)
+        finally:
+            session.close()
+
+    def run(self, callback: Any) -> Any:
+        session = get_session(self.engine)
+        try:
+            return callback(session)
+        finally:
+            session.close()
+
+
+LIVE_STATE = _PersistentState()
+
+
+def _format_simulation_response(
+    *,
+    chain: Any,
+    request_id: int,
+    request_at: str | None,
+    project_code: str | None,
+) -> dict[str, Any]:
+    response = approval_chain_to_dict(chain)
+    overlays = sorted(
+        {
+            step["source"]
+            for step in response["steps"]
+            if step["source"] not in {"official", "fallback"}
+        }
+    )
+    response.update(
+        {
+            "status": "success",
+            "request_id": request_id,
+            "request_at": request_at,
+            "project_code": project_code,
+            "approval_levels": len(response["steps"]),
+            "fallback_used": any(step["is_fallback"] for step in response["steps"]),
+            "overlays_applied": overlays,
+        }
+    )
+    return response
+
+
+def build_live_bootstrap_payload() -> dict[str, Any]:
+    def _build(session: Any) -> dict[str, Any]:
+        base_payload = build_bootstrap_payload()
+        current = serialize_configurable_data(session)
+        base_payload["configurable_data"] = current
+        base_payload["departments"] = [
+            {
+                "code": department["code"],
+                "name": department["name"],
+                "id": department["id"],
+            }
+            for department in current["departments"]
+        ]
+        base_payload["actions"] = [
+            {"code": action["code"], "name": action["name"], "id": action["id"]}
+            for action in current["actions"]
+        ]
+        base_payload["users"] = [
+            _serialize_live_user(user, current)
+            for user in current["users"]
+            if user["is_active"]
+        ]
+        base_payload["org_charts"] = {
+            department["code"]: get_department_org_chart(session, department["code"])
+            for department in current["departments"]
+        }
+        return base_payload
+
+    return LIVE_STATE.run(_build)
+
+
+def simulate_action_request_live(
+    requester_id: int,
+    action_code: str,
+    request_at: str | None = None,
+    project_code: str | None = None,
+) -> dict[str, Any]:
+    def _simulate(session: Any) -> dict[str, Any]:
+        try:
+            parsed_request_at = _parse_request_at(request_at)
+            chain = build_approval_chain(
+                session,
+                requester_id,
+                action_code,
+                request_at=parsed_request_at,
+                project_code=project_code,
+            )
+            request = submit_request(
+                session,
+                requester_id,
+                action_code,
+                request_at=parsed_request_at,
+                project_code=project_code,
+            )
+            return _format_simulation_response(
+                chain=chain,
+                request_id=request.id,
+                request_at=request_at,
+                project_code=project_code,
+            )
+        except RoutingError as exc:
+            return {"status": "error", "error": str(exc)}
+
+    return LIVE_STATE.run(_simulate)
+
+
+def _serialize_live_user(user: dict[str, Any], current: dict[str, Any]) -> dict[str, Any]:
+    departments_by_id = {department["id"]: department for department in current["departments"]}
+    levels_by_id = {level["id"]: level for level in current["dept_levels"]}
+    org_units_by_id = {org_unit["id"]: org_unit for org_unit in current["org_units"]}
+    level = levels_by_id[user["dept_level_id"]]
+    department = departments_by_id[user["dept_id"]]
+    return {
+        "id": user["id"],
+        "name": user["name"],
+        "email": user["email"],
+        "department_code": department["code"],
+        "level_name": level["level_name"],
+        "level_rank": level["level_rank"],
+        "org_units": [
+            org_units_by_id[org_unit_id]["name"]
+            for org_unit_id in user["org_unit_ids"]
+            if org_unit_id in org_units_by_id
+        ],
+        "is_team_lead": user["is_team_lead"],
+    }
 
 
 class ManualTestRequestHandler(BaseHTTPRequestHandler):
@@ -401,14 +599,21 @@ class ManualTestRequestHandler(BaseHTTPRequestHandler):
             )
             self._send_static(path.lstrip("/"), content_type)
         elif path == "/api/bootstrap":
-            self._send_json(build_bootstrap_payload())
+            self._send_json(build_live_bootstrap_payload())
         elif path == "/api/org-chart":
             department_code = query.get("department", ["FIN"])[0]
             try:
-                with _seeded_session() as (_, session, _):
-                    self._send_json(get_department_org_chart(session, department_code))
+                self._send_json(
+                    LIVE_STATE.run(
+                        lambda session: get_department_org_chart(session, department_code)
+                    )
+                )
             except ValueError as exc:
                 self._send_json({"error": str(exc)}, status=404)
+        elif path == "/api/configurable-data":
+            self._send_json(
+                LIVE_STATE.run(lambda session: serialize_configurable_data(session))
+            )
         else:
             self._send_json({"error": "Not found"}, status=404)
 
@@ -416,7 +621,7 @@ class ManualTestRequestHandler(BaseHTTPRequestHandler):
         if self.path == "/api/simulate-request":
             payload = self._read_json_body()
             self._send_json(
-                simulate_action_request(
+                simulate_action_request_live(
                     requester_id=int(payload["requester_id"]),
                     action_code=str(payload["action_code"]),
                     request_at=payload.get("request_at"),
@@ -433,11 +638,83 @@ class ManualTestRequestHandler(BaseHTTPRequestHandler):
         if self.path == "/api/team-lead-permission":
             payload = self._read_json_body()
             self._send_json(
-                simulate_team_lead_permission(
-                    editor_id=int(payload["editor_id"]),
-                    target_user_id=int(payload["target_user_id"]),
+                LIVE_STATE.run(
+                    lambda session: _permission_result(
+                        session,
+                        editor_id=int(payload["editor_id"]),
+                        target_user_id=int(payload["target_user_id"]),
+                    )
                 )
             )
+            return
+
+        if self.path == "/api/configurable-data":
+            payload = self._read_json_body()
+            try:
+                self._send_json(
+                    LIVE_STATE.run(
+                        lambda session: apply_configuration_change(
+                            session,
+                            entity=str(payload["entity"]),
+                            operation=str(payload["operation"]),
+                            payload=dict(payload.get("payload", {})),
+                        )
+                    )
+                )
+            except ConfigurationError as exc:
+                self._send_json({"status": "error", "error": str(exc)}, status=400)
+            return
+
+        if self.path == "/api/diagram-edit":
+            payload = self._read_json_body()
+            try:
+                result = LIVE_STATE.run(
+                    lambda session: apply_diagram_edit(
+                        session,
+                        target_user_id=int(payload["target_user_id"]),
+                        editor_user_id=(
+                            int(payload["editor_user_id"])
+                            if payload.get("editor_user_id") is not None
+                            else None
+                        ),
+                        dept_id=(
+                            int(payload["dept_id"])
+                            if payload.get("dept_id") is not None
+                            else None
+                        ),
+                        dept_level_id=(
+                            int(payload["dept_level_id"])
+                            if payload.get("dept_level_id") is not None
+                            else None
+                        ),
+                        manager_id=(
+                            int(payload["manager_id"])
+                            if payload.get("manager_id") is not None
+                            else None
+                        ),
+                        org_unit_ids=(
+                            [int(org_unit_id) for org_unit_id in payload["org_unit_ids"]]
+                            if payload.get("org_unit_ids") is not None
+                            else None
+                        ),
+                        is_team_lead=payload.get("is_team_lead"),
+                    )
+                )
+                self._send_json(
+                    {
+                        "status": "success",
+                        "result": {
+                            "target_user_id": result.target_user_id,
+                            "manager_id": result.manager_id,
+                            "dept_id": result.department_id,
+                            "dept_level_id": result.dept_level_id,
+                            "org_unit_ids": result.org_unit_ids,
+                            "is_team_lead": result.is_team_lead,
+                        },
+                    }
+                )
+            except ConfigurationError as exc:
+                self._send_json({"status": "error", "error": str(exc)}, status=400)
             return
 
         self._send_json({"error": "Not found"}, status=404)
