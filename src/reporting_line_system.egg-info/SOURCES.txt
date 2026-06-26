@@ -2,7 +2,9 @@ README.md
 pyproject.toml
 src/__init__.py
 src/database.py
+src/manual_test_app.py
 src/models.py
+src/sample_data.py
 src/reporting_line_system.egg-info/PKG-INFO
 src/reporting_line_system.egg-info/SOURCES.txt
 src/reporting_line_system.egg-info/dependency_links.txt
@@ -10,5 +12,8 @@ src/reporting_line_system.egg-info/requires.txt
 src/reporting_line_system.egg-info/top_level.txt
 src/services/__init__.py
 src/services/approval.py
+src/services/org_chart.py
+src/services/permissions.py
 src/services/routing.py
+tests/test_manual_test_app.py
 tests/test_routing.py
