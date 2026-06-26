@@ -1,4 +1,6 @@
 __init__
 database
+manual_test_app
 models
+sample_data
 services

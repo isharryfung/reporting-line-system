@@ -77,6 +77,7 @@ label {
 
 select,
 input,
+textarea,
 button {
   border-radius: 12px;
   font: inherit;
@@ -84,9 +85,16 @@ button {
 }
 
 select,
-input {
+input,
+textarea {
   background: white;
   border: 1px solid #cbd7e6;
+}
+
+textarea {
+  min-height: 9rem;
+  resize: vertical;
+  width: 100%;
 }
 
 button {

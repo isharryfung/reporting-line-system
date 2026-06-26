@@ -82,6 +82,87 @@
         </div>
       </section>
 
+      <section class="card two-column">
+        <div>
+          <h2>Editable Diagram Controls</h2>
+          <form id="diagram-form" class="stack">
+            <label>
+              Editor (team lead for permission check)
+              <select id="diagram-editor-select"></select>
+            </label>
+            <label>
+              Target user
+              <select id="diagram-target-select"></select>
+            </label>
+            <label>
+              New department
+              <select id="diagram-department-select"></select>
+            </label>
+            <label>
+              New level
+              <select id="diagram-level-select"></select>
+            </label>
+            <label>
+              New primary manager
+              <select id="diagram-manager-select"></select>
+            </label>
+            <label>
+              New org-unit
+              <select id="diagram-org-unit-select"></select>
+            </label>
+            <label>
+              <input id="diagram-team-lead-input" type="checkbox" />
+              Set target as team lead in selected org-unit
+            </label>
+            <button type="submit">Apply diagram edit</button>
+          </form>
+          <pre id="diagram-output">Select a target user and apply a structural edit.</pre>
+        </div>
+
+        <div>
+          <h2>Configurable Field Manager</h2>
+          <form id="config-form" class="stack">
+            <label>
+              Entity
+              <select id="config-entity-select">
+                <option value="users">users</option>
+                <option value="dept_levels">positions / department levels</option>
+                <option value="departments">departments</option>
+                <option value="org_units">org-units / teams</option>
+                <option value="actions">action types</option>
+                <option value="action_routing_rules">action routing rules</option>
+                <option value="reporting_lines">reporting-line relationships</option>
+                <option value="department_fallback_rules">fallback approvers</option>
+                <option value="acting_assignments">acting overlays</option>
+                <option value="delegation_assignments">delegation overlays</option>
+                <option value="coverage_assignments">coverage overlays</option>
+                <option value="handover_overlaps">handover overlays</option>
+                <option value="co_head_assignments">co-head overlays</option>
+              </select>
+            </label>
+            <label>
+              Operation
+              <select id="config-operation-select">
+                <option value="upsert">upsert</option>
+                <option value="activate">activate</option>
+                <option value="deactivate">deactivate</option>
+                <option value="delete">delete</option>
+              </select>
+            </label>
+            <label>
+              Payload JSON
+              <textarea id="config-payload-input" rows="10">
+{
+  "id": 0
+}
+              </textarea>
+            </label>
+            <button type="submit">Apply configurable field change</button>
+          </form>
+          <pre id="config-output">Provide JSON payload and run a configurable field change.</pre>
+        </div>
+      </section>
+
       <section class="card">
         <h2>Advanced Scenario Simulations</h2>
         <p>
