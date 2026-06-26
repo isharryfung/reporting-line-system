@@ -1584,8 +1584,20 @@ function renderTestCaseDiagram() {
   drawDiagram(svg, tcVisibleUsers(), {
     deptTag: tcDept === "ALL",
     selectedId: tcSelected ? tcSelected.id : null,
-    onNodeClick: openTestCaseEditPanel,
+    onNodeClick: onTestCaseNodeClick,
   });
+}
+
+// Clicking a person in the Test Case Diagram selects them as the requester so
+// the reporting line result describes that person's reporting line, while still
+// opening the temporary manager-edit panel for further adjustments.
+function onTestCaseNodeClick(user) {
+  const reqSel = document.getElementById("testcase-requester");
+  if (reqSel && String(reqSel.value) !== String(user.id)) {
+    reqSel.value = String(user.id);
+    runTestCaseReportingLine();
+  }
+  openTestCaseEditPanel(user);
 }
 
 function openTestCaseEditPanel(user) {
