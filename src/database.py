@@ -18,7 +18,7 @@ from src.models import Base
 def create_engine_sqlite(path: str = ":memory:") -> Engine:
     """Return a SQLite engine.  path=':memory:' gives an in-memory database."""
     url = f"sqlite:///{path}"
-    return create_engine(url, echo=False)
+    return create_engine(url, echo=False, connect_args={"check_same_thread": False})
 
 
 def init_db(engine: Engine) -> None:

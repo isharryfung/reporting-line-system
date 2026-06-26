@@ -130,6 +130,126 @@ pre {
   padding: 0.9rem;
 }
 
+.diagram-shell {
+  overflow: auto;
+}
+
+.diagram-canvas {
+  background: #fbfdff;
+  border: 1px solid #d7e5f7;
+  border-radius: 14px;
+  margin-top: 0.75rem;
+  min-height: 540px;
+  position: relative;
+}
+
+.ownership-band {
+  background: rgb(148 183 230 / 10%);
+  border-bottom: 1px dashed #aac4e9;
+  left: 0;
+  position: absolute;
+  right: 0;
+}
+
+.ownership-band span {
+  background: #edf4ff;
+  border: 1px solid #bad0ef;
+  border-radius: 999px;
+  color: #375483;
+  font-size: 0.75rem;
+  left: 120px;
+  padding: 0.18rem 0.55rem;
+  position: absolute;
+  top: 0.3rem;
+}
+
+.team-region {
+  align-items: flex-end;
+  background: rgb(255 245 199 / 30%);
+  border: 1px dashed #e8c96f;
+  border-radius: 12px;
+  color: #6f5507;
+  display: flex;
+  font-size: 0.78rem;
+  font-weight: 700;
+  justify-content: center;
+  padding: 0.25rem;
+  position: absolute;
+  width: 260px;
+}
+
+.level-label {
+  color: #51698a;
+  font-size: 0.77rem;
+  font-weight: 700;
+  left: 1rem;
+  position: absolute;
+}
+
+.diagram-edges {
+  height: 100%;
+  left: 0;
+  position: absolute;
+  top: 0;
+  width: 100%;
+}
+
+.official-edge {
+  stroke: #2e568c;
+  stroke-width: 2;
+}
+
+.route-edge {
+  stroke: #de6b1f;
+  stroke-dasharray: 6 6;
+  stroke-width: 2.5;
+}
+
+.graph-node {
+  align-items: flex-start;
+  background: white;
+  border: 1px solid #b8cae1;
+  border-radius: 10px;
+  color: #132742;
+  display: grid;
+  gap: 0.15rem;
+  min-width: 180px;
+  padding: 0.45rem 0.55rem;
+  position: absolute;
+  text-align: left;
+}
+
+.graph-node:hover {
+  border-color: #0c65d8;
+}
+
+.graph-node strong {
+  font-size: 0.85rem;
+}
+
+.graph-node span {
+  font-size: 0.75rem;
+}
+
+.diagram-legend {
+  color: #466289;
+  font-size: 0.85rem;
+  margin: 0.75rem 0 0;
+}
+
+.swatch {
+  border-bottom: 3px solid #2e568c;
+  display: inline-block;
+  margin: 0 0.35rem 0 0.85rem;
+  vertical-align: middle;
+  width: 1.2rem;
+}
+
+.swatch.dashed {
+  border-bottom-style: dashed;
+  border-bottom-color: #de6b1f;
+}
+
 .org-unit-card ul {
   margin: 0;
   padding-left: 1.1rem;
