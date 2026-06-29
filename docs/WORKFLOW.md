@@ -75,16 +75,22 @@ The schema includes:
 
 ### Layer model
 
-| Layer | Levels | Roles | Ownership |
-|---|---|---|---|
-| Layer 1 | 1–3 | Provost, VP, School | Corporate (`EXEC` department) |
-| Layer 2 | 4 | Department Head | Own by each department |
-| Layer 3 | 5–7 | Senior Manager (Team Lead), Manager, Systems Analyst | Own by each team lead |
-| Layer 4 | 8–9 | Analyst Programmer, Programmer | Own by each team |
+| Layer | Levels | Roles | Owned by | Managed by |
+|---|---|---|---|---|
+| Layer 1 | 1–3 | Provost, VP, School | Corporate (`EXEC` department) | Provost / VP |
+| Layer 2 | 4 | Department Head | Each department | Layer 1 (corporate) |
+| Layer 3 | 5–7 | Senior Manager (Team Lead), Manager, Systems Analyst | Department Head | Department Head |
+| Layer 4 | 8–9 | Analyst Programmer, Programmer | Each team lead | Each team lead |
 
 Layer 1 is seeded as a shared **University Executive** department: School
 reports to VP, VP reports to Provost (the top of the institution), and each
 department head reports up to the School.
+
+Departments handle their own actions internally and generally do not involve
+Layer 1: Layer 3 and Layer 4 actions are resolved within the department,
+escalating only **up to Layer 2 (Department Head)**. Layer 4 is owned and
+managed by each team lead, and Layer 3 is owned and managed by the
+Department Head.
 
 ### Corrected global level mapping
 
