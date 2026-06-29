@@ -2196,6 +2196,10 @@ function renderThirtyCasesDiagram() {
 // chain — the same logic used when a node is clicked.
 function thirtyCasesTargetChain(users, testCase) {
   if (!testCase || (testCase.target && testCase.target.length === 0)) return null;
+  // Bold each case's explicit, scenario-specific target line(s) so overlay,
+  // override, skip-level and co-head cases highlight the documented approver
+  // chain rather than the focus member's plain primary line.
+  if (testCase.target && testCase.target.length) return testCase.target;
   return thirtyCasesFocusChain(users, thirtyCasesFocusId(users, testCase));
 }
 
