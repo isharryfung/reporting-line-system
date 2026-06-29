@@ -73,6 +73,19 @@ The schema includes:
 
 ## Seed data
 
+### Layer model
+
+| Layer | Levels | Roles | Ownership |
+|---|---|---|---|
+| Layer 1 | 1–3 | Provost, VP, School | Corporate (`EXEC` department) |
+| Layer 2 | 4 | Department Head | Own by each department |
+| Layer 3 | 5–7 | Senior Manager (Team Lead), Manager, Systems Analyst | Own by each team lead |
+| Layer 4 | 8–9 | Analyst Programmer, Programmer | Own by each team |
+
+Layer 1 is seeded as a shared **University Executive** department: School
+reports to VP, VP reports to Provost (the top of the institution), and each
+department head reports up to the School.
+
 ### Corrected global level mapping
 
 | Level Rank | Role/Position example |
