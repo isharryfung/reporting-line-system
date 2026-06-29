@@ -2206,15 +2206,14 @@ function updateThirtyCasesDetail() {
   document.getElementById("thirty-cases-title").textContent = `${tc.id}. ${tc.title} — ${tc.category}`;
   document.getElementById("thirty-cases-scenario").textContent = tc.scenario;
   let line;
+  const users = thirtyCasesUsers();
   if (thirtyCasesFocusOverride != null) {
-    const users = thirtyCasesUsers();
     const person = users.find((u) => u.id === thirtyCasesFocusOverride);
     const chain = thirtyCasesFocusChain(users, thirtyCasesFocusOverride);
     line = chain
       ? `Focus line: ${chain.map((c) => c.join(" → ")).join("  •  ")}`
       : `Focus line: ${person ? person.name : "?"} — top of chain, no manager.`;
   } else {
-    const users = thirtyCasesUsers();
     const chain = thirtyCasesTargetChain(users, tc);
     line = chain
       ? "Target line: " + chain.map((c) => c.join(" → ")).join("  •  ")
