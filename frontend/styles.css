@@ -617,6 +617,12 @@ th {
   align-items: start;
 }
 
+/* min-width:0 lets the 1fr track shrink so the wide diagram scrolls inside
+   .diagram-container instead of blowing out the grid track horizontally. */
+.thirty-cases-diagram {
+  min-width: 0;
+}
+
 .thirty-cases-list {
   max-height: 600px;
   overflow-y: auto;
