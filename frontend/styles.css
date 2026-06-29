@@ -640,7 +640,7 @@ th {
 /* 30 Testcase Diagram: case list on the left, diagram on the right. */
 .thirty-cases-workspace {
   display: grid;
-  grid-template-columns: 320px 1fr;
+  grid-template-columns: 520px 1fr;
   gap: 1rem;
   align-items: start;
 }
@@ -666,6 +666,28 @@ th {
   padding: 0;
 }
 
+.thirty-cases-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.thirty-cases-table thead th {
+  position: sticky;
+  top: 0;
+  background: #eef4fd;
+  text-align: left;
+  padding: 0.4rem 0.5rem;
+  color: #6a7a90;
+  border-bottom: 1px solid #d8e2f0;
+}
+
+.thirty-cases-table td {
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid #eef2f8;
+  vertical-align: top;
+}
+
 .thirty-cases-filter {
   display: flex;
   flex-direction: column;
@@ -684,21 +706,11 @@ th {
 }
 
 .thirty-case-row {
-  display: flex;
-  gap: 0.5rem;
-  align-items: flex-start;
-  padding: 0.4rem 0.5rem;
-  border-radius: 8px;
   cursor: pointer;
 }
 
 .thirty-case-row:hover {
   background: #eef4fd;
-}
-
-.thirty-case-row span {
-  display: flex;
-  flex-direction: column;
 }
 
 .thirty-case-cat {
