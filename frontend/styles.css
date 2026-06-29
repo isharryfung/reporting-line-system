@@ -387,6 +387,22 @@ th {
   stroke-width: 1;
 }
 
+/* Layer bands shade each reporting tier (Layer 1–4) behind the level rows. */
+.layer-band {
+  stroke: none;
+}
+.layer-band-1 { fill: #eaf2ff; }
+.layer-band-2 { fill: #e8f7ef; }
+.layer-band-3 { fill: #fff4e6; }
+.layer-band-4 { fill: #f4eafc; }
+
+.layer-band-label {
+  fill: #7a8aa0;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+}
+
 .level-label {
   fill: #8899aa;
   font-family: inherit;

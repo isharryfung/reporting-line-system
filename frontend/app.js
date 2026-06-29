@@ -325,6 +325,17 @@ const LEFT_PAD = 60;
 const TOP_PAD = 40;
 const LEVEL_LABEL_X = 8;
 
+// Layer model: each level rank belongs to one of four reporting-line layers.
+// Layer 1 = ranks 1–3 (Provost/VP/School), Layer 2 = rank 4 (Dept Head),
+// Layer 3 = ranks 5–7 (Senior Manager/Manager/Systems Analyst), Layer 4 =
+// ranks 8–9 (Analyst Programmer/Programmer). Used to color rows by layer band.
+function layerForRank(rank) {
+  if (rank <= 3) return 1;
+  if (rank === 4) return 2;
+  if (rank <= 7) return 3;
+  return 4;
+}
+
 // Distinct colors for reporting lines, assigned per individual person so that
 // each subordinate's line up to their manager is visually distinct — even when
 // several people at the same rank report into the same higher rank. For
@@ -500,6 +511,32 @@ function drawDiagram(svg, users, options) {
   svg.style.height = `${svgH}px`;
 
   const ns = "http://www.w3.org/2000/svg";
+
+  // Layer bands: shade each contiguous group of level rows by their reporting
+  // layer so the four-tier structure (Layer 1–4) reads at a glance. Drawn first
+  // so they sit behind separators, edges, and nodes.
+  for (let i = 0; i < sortedLevels.length; i++) {
+    const layer = layerForRank(sortedLevels[i]);
+    let j = i;
+    while (j + 1 < sortedLevels.length && layerForRank(sortedLevels[j + 1]) === layer) j++;
+    const bandTop = TOP_PAD + i * LEVEL_H - 30;
+    const bandBottom = TOP_PAD + j * LEVEL_H + NODE_H + 14;
+    const band = document.createElementNS(ns, "rect");
+    band.setAttribute("x", 0);
+    band.setAttribute("y", bandTop);
+    band.setAttribute("width", svgW);
+    band.setAttribute("height", bandBottom - bandTop);
+    band.setAttribute("class", `layer-band layer-band-${layer}`);
+    svg.appendChild(band);
+    // Layer caption on the left margin, aligned with the first row of the band.
+    const caption = document.createElementNS(ns, "text");
+    caption.setAttribute("x", LEVEL_LABEL_X);
+    caption.setAttribute("y", TOP_PAD + i * LEVEL_H - 16);
+    caption.setAttribute("class", "layer-band-label");
+    caption.textContent = `Layer ${layer}`;
+    svg.appendChild(caption);
+    i = j;
+  }
 
   // Department group headers and separators (only in the combined view).
   if (groupByDept) {
@@ -1994,15 +2031,15 @@ function renderTestCaseOverlayResult(result) {
 const THIRTY_CASES = [
   { id: 1, category: "Acting & Coverage", title: "Skip-level Acting", focus: "Boris", focusDept: "ITSO", scenario: "A senior leader leaves and a junior employee acts for the whole department.", method: "Add an Acting record and assign the junior to the Acting Senior Leader job position; authority is inherited from that position.", target: [["Boris", "Ivan"]] },
   { id: 2, category: "Acting & Coverage", title: "Peer Coverage", focus: "Cara", focusDept: "ITSO", scenario: "Team A's manager is on leave; Team B's manager temporarily covers Team A.", method: "Give Team B's manager a second assignment to Acting Team A Head, covering two reporting lines.", target: [["Cara", "Ivan"]] },
-  { id: 3, category: "Acting & Coverage", title: "Partial Acting", focus: "Cleo", focusDept: "ITSO", scenario: "Manager leaves; B covers leave approvals, C covers performance reviews.", method: "Decouple workflows by approval type: B under Administrative Head, C under Functional/Dotted-line position.", target: [["Cleo", "Ingrid"], ["Cleo", "Cara"]] },
+  { id: 3, category: "Acting & Coverage", title: "Partial Acting", focus: "Cleo", focusDept: "ITSO", scenario: "Manager leaves; B covers leave approvals, C covers performance reviews.", method: "Decouple workflows by approval type: B under Administrative Head, C under Functional/Dotted-line position.", target: [["Cleo", "Ingrid", "Ivan"], ["Cleo", "Cara", "Ivan"]] },
   { id: 4, category: "Acting & Coverage", title: "Dummy Head", focus: "Hannah", focusDept: "HRO", scenario: "A new department lacks a head, so a neighboring head is temporarily assigned.", method: "Assign the neighboring department head to the new department's Head job position.", target: [["Hannah", "Ivan"]] },
   { id: 5, category: "Acting & Coverage", title: "Self-Approval", focus: "Ingrid", focusDept: "ITSO", scenario: "A manager acting in their own supervisor's role routes their leave back to themselves.", method: "Safeguard: if Submitter == Approver, roll up to next level or route to HR.", target: [["Ingrid", "Ivan"]] },
-  { id: 6, category: "Acting & Coverage", title: "Handover Overlap", focus: "Isaac", focusDept: "ITSO", scenario: "Old and new managers occupy the same Head position during a 2-week overlap.", method: "Support over-hiring; HR specifies who holds approval authority during transition.", target: [["Isaac", "Ingrid"]] },
+  { id: 6, category: "Acting & Coverage", title: "Handover Overlap", focus: "Isaac", focusDept: "ITSO", scenario: "Old and new managers occupy the same Head position during a 2-week overlap.", method: "Support over-hiring; HR specifies who holds approval authority during transition.", target: [["Isaac", "Ingrid", "Ivan"]] },
   { id: 7, category: "Matrix & Dual Reporting", title: "Cross-Department Project", focus: "Boris", focusDept: "ITSO", scenario: "An IT employee is seconded 100% to HR for a six-month project.", method: "Keep IT job position for payroll; add Override_Reports_To to the HR Project Manager for leave approval.", target: [["Boris", "Hannah"]] },
-  { id: 8, category: "Matrix & Dual Reporting", title: "Split Allocation", focus: "Bruno", focusDept: "ITSO", scenario: "A professor spends 50% in two schools.", method: "Create two job assignments and define which is the main approval line.", target: [["Bruno", "Ingrid"]] },
+  { id: 8, category: "Matrix & Dual Reporting", title: "Split Allocation", focus: "Bruno", focusDept: "ITSO", scenario: "A professor spends 50% in two schools.", method: "Create two job assignments and define which is the main approval line.", target: [["Bruno", "Ingrid", "Ivan"]] },
   { id: 9, category: "Matrix & Dual Reporting", title: "Co-Heads", focus: "Cara", focusDept: "ITSO", scenario: "A team has two equal Co-Directors.", method: "Link the Org Unit to multiple Co-Head positions; workflow is Any-One-Approve.", target: [["Cara", "Ivan"], ["Cara", "Ingrid"]] },
   { id: 10, category: "Matrix & Dual Reporting", title: "Executive Assistant Delegation", focus: "Ivan", focusDept: "ITSO", scenario: "An executive never logs in; their EA handles all approvals.", method: "Delegation module: executive delegates authority to the EA; audit log records on-behalf-of.", target: [["Isaac", "Ivan"]] },
-  { id: 11, category: "Matrix & Dual Reporting", title: "Tech Lead vs People Manager", focus: "Dana", focusDept: "ITSO", scenario: "Tech lead manages work; another manager handles people matters.", method: "Tech Lead/Dotted-line for projects; People Manager as solid-line manager.", target: [["Dana", "Cara"]] },
+  { id: 11, category: "Matrix & Dual Reporting", title: "Tech Lead vs People Manager", focus: "Dana", focusDept: "ITSO", scenario: "Tech lead manages work; another manager handles people matters.", method: "Tech Lead/Dotted-line for projects; People Manager as solid-line manager.", target: [["Dana", "Cara", "Ivan"]] },
   { id: 12, category: "Matrix & Dual Reporting", title: "Global Matrix", focus: "Hope", focusDept: "HRO", scenario: "HK employee on a Local Line reports functionally to a Global Head in the US.", method: "Use Local Line for HR/leave; store Global Head in an override field for business reporting.", target: [["Hope", "Hannah"]] },
   { id: 13, category: "Hierarchy Anomalies & Loops", title: "Circular Reporting Line", focus: "Isaac", focusDept: "ITSO", scenario: "A→B→C and C acts in a role reporting back to A.", method: "Run DFS/BFS validation before saving; reject cycles with a validation error.", target: [["Isaac", "Ingrid", "Ivan"]] },
   { id: 14, category: "Hierarchy Anomalies & Loops", title: "Orphan Node", focus: "Carl", focusDept: "ITSO", scenario: "An employee's team is dissolved; they are not reassigned.", method: "If Org_Unit_ID is null, treat as Orphan and route to HRBP/HR queue.", target: [["Carl", "Hannah"]] },
@@ -2011,14 +2048,14 @@ const THIRTY_CASES = [
   { id: 17, category: "Hierarchy Anomalies & Loops", title: "One-Man Department", focus: "Hannah", focusDept: "HRO", scenario: "A department has only one person, who is also the head.", method: "Normal case: that person's requests roll up to next level.", target: [["Hannah", "Ivan"]] },
   { id: 18, category: "Hierarchy Anomalies & Loops", title: "Parking Department", focus: "Hilda", focusDept: "HRO", scenario: "A special department parks staff pending redundancy or long leave.", method: "Special Org Unit with auto-approval or centralized HR handling.", target: [["Hilda", "Hannah"]] },
   { id: 19, category: "Temporal & Effective Dating", title: "Future Transfer", focus: "Boris", focusDept: "ITSO", scenario: "Future transfer set; leave applied for after the effective date.", method: "Resolve approver by event date; route to the future New Manager.", target: [["Boris", "Hannah"]] },
-  { id: 20, category: "Temporal & Effective Dating", title: "Retroactive Promotion", focus: "Cyrus", focusDept: "ITSO", scenario: "Promotion entered late; early requests approved by wrong person.", method: "Completed transactions not re-routed; audit log flags the prior approver.", target: [["Cyrus", "Cara"]] },
+  { id: 20, category: "Temporal & Effective Dating", title: "Retroactive Promotion", focus: "Cyrus", focusDept: "ITSO", scenario: "Promotion entered late; early requests approved by wrong person.", method: "Completed transactions not re-routed; audit log flags the prior approver.", target: [["Cyrus", "Cara", "Ivan"]] },
   { id: 21, category: "Temporal & Effective Dating", title: "Manager Gap", focus: "Hazel", focusDept: "HRO", scenario: "Old manager leaves Fri, new starts Wed; who approves in the gap?", method: "Roll up to Next-Level Manager or queue until new manager is effective.", target: [["Hazel", "Hannah"]] },
-  { id: 22, category: "Temporal & Effective Dating", title: "Management Trainee Rotation", focus: "Dean", focusDept: "ITSO", scenario: "A trainee rotates teams every three months.", method: "Preconfigure rotational positions with start/end dates; auto-switch org unit.", target: [["Dean", "Cara"]] },
+  { id: 22, category: "Temporal & Effective Dating", title: "Management Trainee Rotation", focus: "Dean", focusDept: "ITSO", scenario: "A trainee rotates teams every three months.", method: "Preconfigure rotational positions with start/end dates; auto-switch org unit.", target: [["Dean", "Cara", "Ivan"]] },
   { id: 23, category: "Temporal & Effective Dating", title: "No Pay Leave", focus: "Daisy", focusDept: "ITSO", scenario: "A staff is on unpaid leave for a year, no approvals allowed.", method: "Set assignment Inactive; suspend workflow responsibilities.", target: [] },
   { id: 24, category: "Temporal & Effective Dating", title: "Re-Hire", focus: "Hugo", focusDept: "HRO", scenario: "An employee leaves and returns in a new role two years later.", method: "New assignment, same Employee ID; historical lines unaffected.", target: [["Hugo", "Hannah"]] },
   { id: 25, category: "Special Entities", title: "External Consultant / Vendor", focus: "Isaac", focusDept: "ITSO", scenario: "Outsourced IT team reports leave to an internal IT Manager.", method: "Create a Contingent Worker identity and attach to the relevant Org Unit.", target: [["Isaac", "Ivan"]] },
   { id: 26, category: "Special Entities", title: "Cross-Company Secondment", focus: "Hannah", focusDept: "HRO", scenario: "Affiliate A staff seconded to Affiliate B as manager.", method: "Multi-entity architecture: A's employee occupies a position in B.", target: [["Hannah", "Ivan"]] },
-  { id: 27, category: "Special Entities", title: "Job Sharing", focus: "Bruno", focusDept: "ITSO", scenario: "Two part-time employees share one full-time role.", method: "Both assigned to the same position at 0.5 FTE each.", target: [["Bruno", "Ingrid"]] },
+  { id: 27, category: "Special Entities", title: "Job Sharing", focus: "Bruno", focusDept: "ITSO", scenario: "Two part-time employees share one full-time role.", method: "Both assigned to the same position at 0.5 FTE each.", target: [["Bruno", "Ingrid", "Ivan"]] },
   { id: 28, category: "Special Entities", title: "Shell Position", focus: "Bianca", focusDept: "ITSO", scenario: "Budgeted in Dept A but works in Dept B.", method: "Keep Dept A for budget; override reporting line to Dept B.", target: [["Bianca", "Hannah"]] },
   { id: 29, category: "Special Entities", title: "Terminated Approver", focus: "Bonnie", focusDept: "ITSO", scenario: "A left manager keeps receiving routed requests.", method: "Check approver status; if terminated, fallback to HR.", target: [["Bonnie", "Ivan"]] },
   { id: 30, category: "Special Entities", title: "Union / Special Committee", focus: "Hope", focusDept: "HRO", scenario: "Union matters report to the union chair, not the daily manager.", method: "Dotted-line or dedicated Committee Org Unit for specific request types.", target: [["Hope", "Hannah"]] },
