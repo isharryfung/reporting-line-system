@@ -51,10 +51,11 @@ _engine = None
 _SessionFactory = None
 
 # Department codes the sample data is expected to seed. A persisted database
-# created by an older build (e.g. before the ITSO/HRO departments were added)
-# will be missing some of these, in which case it is re-seeded so the diagrams
-# always show the full sample organisation.
-_EXPECTED_SEED_DEPARTMENTS = frozenset({"FIN", "HR", "ITSO", "HRO"})
+# created by an older build (e.g. before the ITSO/HRO or EXEC departments were
+# added) will be missing some of these, in which case it is re-seeded so the
+# diagrams always show the full sample organisation, including the Layer 1
+# corporate tier (EXEC: Provost > VP > School).
+_EXPECTED_SEED_DEPARTMENTS = frozenset({"FIN", "HR", "ITSO", "HRO", "EXEC"})
 
 # Level ranks the sample data is expected to seed per department. A persisted
 # database created by an older build may still carry stale ranks (e.g. ITSO/HRO

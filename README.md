@@ -41,6 +41,22 @@ python -m src.manual_test_app
 
 Then open <http://127.0.0.1:8000>.
 
+## Layer model
+
+The hierarchy is organised into four layers, mirroring the reporting-line
+structure diagram:
+
+| Layer | Levels | Roles | Ownership |
+|---|---|---|---|
+| **Layer 1** | 1–3 | Provost, VP, School | Corporate (shared by all departments) |
+| **Layer 2** | 4 | Department Head | Own by each department |
+| **Layer 3** | 5–7 | Senior Manager (Team Lead), Manager, Systems Analyst | Own by each team lead |
+| **Layer 4** | 8–9 | Analyst Programmer, Programmer | Own by each team |
+
+Layer 1 is seeded as a shared **University Executive** department (`EXEC`):
+School reports to VP, VP reports to Provost (the top of the institution), and
+every department head reports up to the School.
+
 ## Corrected level mapping
 
 | Level Rank | Role |
@@ -110,10 +126,11 @@ The browser UI is organized into eight tabs:
 - **Reset diagram** restores the official reporting lines
 
 ### 30 Testcase Diagram tab
-- Lists all **30 enterprise test cases** (acting & coverage, matrix & dual
+- Lists the enterprise test cases (acting & coverage, matrix & dual
   reporting, hierarchy anomalies & loops, temporal & effective dating, special
-  entities) on the **left**; selecting one **bolds the target reporting line**
-  on the combined **ITSO & HRO** diagram on the **right**
+  entities, and the **Layer 1 corporate tier**) on the **left**; selecting one
+  **bolds the target reporting line** on the combined **EXEC, ITSO & HRO**
+  diagram on the **right**
 - The diagram is read-only; nothing here is saved
 
 ### Seed Data Editor tab

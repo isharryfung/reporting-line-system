@@ -60,6 +60,20 @@ def test_org_chart_display_includes_org_units_team_leads_and_co_heads(db_session
     assert peter["manager_name"] == "Mary"
 
 
+def test_layer1_executive_tier_sits_above_department_heads(db_session, seed):
+    # Layer 1 corporate tier exists with Provost > VP > School.
+    assert seed["provost"].dept_level.level_rank == 1
+    assert seed["vp"].dept_level.level_rank == 2
+    assert seed["school"].dept_level.level_rank == 3
+    assert seed["school"].reporting_lines[0].manager_id == seed["vp"].id
+    assert seed["vp"].reporting_lines[0].manager_id == seed["provost"].id
+    # Department heads report up to the School (Layer 2 -> Layer 1).
+    fiona_managers = [
+        line.manager_id for line in seed["fiona"].reporting_lines if line.is_active
+    ]
+    assert fiona_managers == [seed["school"].id]
+
+
 def test_team_lead_can_edit_lower_level_user_in_same_org_unit(db_session, seed):
     decision = validate_team_lead_edit_permission(
         db_session,
@@ -274,7 +288,7 @@ def test_missing_fallback_rule(db_session, seed):
 def test_circular_reporting_chain(db_session, seed):
     db_session.add(
         ReportingLine(
-            user_id=seed["fiona"].id,
+            user_id=seed["provost"].id,
             manager_id=seed["peter"].id,
             dept_id=seed["finance"].id,
         )

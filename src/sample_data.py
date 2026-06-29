@@ -336,6 +336,73 @@ def _seed_itso_hro_departments(
     }
 
 
+def _seed_executive_tier(session: Session) -> dict[str, Any]:
+    """Seed the corporate Layer 1 tier shared by every department.
+
+    Layer 1 sits above the department heads (Layer 2) and contains three
+    ranks: Provost (rank 1), VP (rank 2) and School (rank 3). The School
+    reports to the VP, who reports to the Provost, who is the top of the
+    institution. Department heads are wired to report up to the School.
+    """
+    executive = Department(name="University Executive", code="EXEC")
+    session.add(executive)
+    session.flush()
+
+    exec_specs = [
+        (1, "Provost", True),
+        (2, "VP", False),
+        (3, "School", False),
+    ]
+    exec_levels: dict[int, DeptLevel] = {}
+    for rank, level_name, is_top in exec_specs:
+        level = DeptLevel(
+            dept_id=executive.id,
+            level_rank=rank,
+            level_name=level_name,
+            is_top_level=is_top,
+        )
+        session.add(level)
+        exec_levels[rank] = level
+    session.flush()
+
+    provost = User(
+        name="Provost",
+        email="provost@university.edu",
+        dept_id=executive.id,
+        dept_level_id=exec_levels[1].id,
+    )
+    vp = User(
+        name="VP",
+        email="vp@university.edu",
+        dept_id=executive.id,
+        dept_level_id=exec_levels[2].id,
+    )
+    school = User(
+        name="School",
+        email="school@university.edu",
+        dept_id=executive.id,
+        dept_level_id=exec_levels[3].id,
+    )
+    session.add_all([provost, vp, school])
+    session.flush()
+
+    session.add_all(
+        [
+            ReportingLine(user_id=school.id, manager_id=vp.id, dept_id=executive.id),
+            ReportingLine(user_id=vp.id, manager_id=provost.id, dept_id=executive.id),
+        ]
+    )
+    session.flush()
+
+    return {
+        "executive": executive,
+        "exec_levels": exec_levels,
+        "provost": provost,
+        "vp": vp,
+        "school": school,
+    }
+
+
 def seed_sample_data(session: Session) -> dict[str, Any]:
     """Populate the database with Finance + HR sample data for the POC."""
     finance = Department(name="Finance", code="FIN")
@@ -689,6 +756,26 @@ def seed_sample_data(session: Session) -> dict[str, Any]:
         },
     )
 
+    # Layer 1 corporate tier (Provost > VP > School) shared by all departments.
+    executive = _seed_executive_tier(session)
+    school = executive["school"]
+    session.add_all(
+        [
+            ReportingLine(user_id=fiona.id, manager_id=school.id, dept_id=finance.id),
+            ReportingLine(user_id=henry.id, manager_id=school.id, dept_id=hr.id),
+            ReportingLine(
+                user_id=extended["itso_head"].id,
+                manager_id=school.id,
+                dept_id=extended["itso"].id,
+            ),
+            ReportingLine(
+                user_id=extended["hro_head"].id,
+                manager_id=school.id,
+                dept_id=extended["hro"].id,
+            ),
+        ]
+    )
+
     session.commit()
 
     result: dict[str, Any] = {
@@ -719,4 +806,5 @@ def seed_sample_data(session: Session) -> dict[str, Any]:
         "project_transform": project_transform,
     }
     result.update(extended)
+    result.update(executive)
     return result

@@ -44,6 +44,7 @@ def test_bootstrap_payload_exposes_seed_data_and_advanced_business_cases():
         "HR",
         "HRO",
         "ITSO",
+        "EXEC",
     ]
     assert any(user["name"] == "Mary" and user["is_team_lead"] for user in payload["users"])
     assert len(BUSINESS_CASES) >= 15
@@ -218,7 +219,7 @@ def test_get_seed_data_returns_all_entity_types():
     assert "actions" in data
     assert "routing_rules" in data
     assert "fallback_rules" in data
-    assert {d["code"] for d in data["departments"]} == {"FIN", "HR", "HRO", "ITSO"}
+    assert {d["code"] for d in data["departments"]} == {"EXEC", "FIN", "HR", "HRO", "ITSO"}
     assert len(data["users"]) > 0
 
 
@@ -436,8 +437,8 @@ def test_simulate_reporting_line_official_chain_produces_wording():
     result = simulate_reporting_line(requester_id=ids["Peter"], edges=[])
     assert result["status"] == "success"
     managers = [step["manager"] for step in result["steps"]]
-    assert managers == ["Mary", "Fiona"]
-    assert result["top_of_line"] == "Fiona"
+    assert managers == ["Mary", "Fiona", "School", "VP", "Provost"]
+    assert result["top_of_line"] == "Provost"
     assert "reports to" in result["wording"]
     assert "top of this reporting line" in result["wording"]
 
@@ -450,7 +451,7 @@ def test_simulate_reporting_line_applies_temporary_edge():
     )
     assert result["status"] == "success"
     managers = [step["manager"] for step in result["steps"]]
-    assert managers == ["Nina", "Fiona"]
+    assert managers == ["Nina", "Fiona", "School", "VP", "Provost"]
     assert "Nina" in result["wording"]
 
 
@@ -467,10 +468,10 @@ def test_simulate_reporting_line_edits_are_not_persisted():
 
 def test_simulate_reporting_line_top_level_user_has_no_manager():
     ids = _user_ids()
-    result = simulate_reporting_line(requester_id=ids["Fiona"], edges=[])
+    result = simulate_reporting_line(requester_id=ids["Provost"], edges=[])
     assert result["status"] == "success"
     assert result["steps"] == []
-    assert result["top_of_line"] == "Fiona"
+    assert result["top_of_line"] == "Provost"
     assert "no manager" in result["wording"]
 
 
