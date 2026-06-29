@@ -2028,6 +2028,9 @@ function renderTestCaseOverlayResult(result) {
 // department head) is the "target reporting line" bolded when the case is
 // selected. Focus users are picked by name where the seed data is
 // deterministic, falling back to the deepest member of the named department.
+// The bolded line is always derived live from the org chart (so it matches the
+// real chain shown by clicking a node); `target: []` flags inactive cases with
+// no workflow, while any other `target` value is illustrative only.
 const THIRTY_CASES = [
   { id: 1, category: "Acting & Coverage", title: "Skip-level Acting", focus: "Boris", focusDept: "ITSO", scenario: "A senior leader leaves and a junior employee acts for the whole department.", method: "Add an Acting record and assign the junior to the Acting Senior Leader job position; authority is inherited from that position.", target: [["Boris", "Ivan"]] },
   { id: 2, category: "Acting & Coverage", title: "Peer Coverage", focus: "Cara", focusDept: "ITSO", scenario: "Team A's manager is on leave; Team B's manager temporarily covers Team A.", method: "Give Team B's manager a second assignment to Acting Team A Head, covering two reporting lines.", target: [["Cara", "Ivan"]] },
@@ -2180,11 +2183,20 @@ function renderThirtyCasesDiagram() {
     },
   });
   // When the user clicks a Focus person, bold that person's resolved reporting
-  // line; otherwise fall back to the case's hardcoded scenario target.
+  // line; otherwise bold the case focus member's resolved line (same logic).
   const chains = thirtyCasesFocusOverride != null
     ? thirtyCasesFocusChain(users, thirtyCasesFocusOverride)
-    : (tc ? tc.target : null);
+    : thirtyCasesTargetChain(users, tc);
   highlightTargetLine(svg, users, chains);
+}
+
+// Resolve a case's default target line from the live org chart. Cases whose
+// target is an empty list are intentionally inactive (no workflow), so they
+// stay unbolded; every other case bolds the focus member's real reporting
+// chain — the same logic used when a node is clicked.
+function thirtyCasesTargetChain(users, testCase) {
+  if (!testCase || (testCase.target && testCase.target.length === 0)) return null;
+  return thirtyCasesFocusChain(users, thirtyCasesFocusId(users, testCase));
 }
 
 // Update the detail panel text to reflect the case default or chosen focus line.
@@ -2202,8 +2214,10 @@ function updateThirtyCasesDetail() {
       ? `Focus line: ${chain.map((c) => c.join(" → ")).join("  •  ")}`
       : `Focus line: ${person ? person.name : "?"} — top of chain, no manager.`;
   } else {
-    line = (tc.target && tc.target.length)
-      ? "Target line: " + tc.target.map((c) => c.join(" → ")).join("  •  ")
+    const users = thirtyCasesUsers();
+    const chain = thirtyCasesTargetChain(users, tc);
+    line = chain
+      ? "Target line: " + chain.map((c) => c.join(" → ")).join("  •  ")
       : "Target line: none — assignment inactive, workflow suspended.";
   }
   document.getElementById("thirty-cases-method").textContent = `${tc.method}  —  ${line}`;
