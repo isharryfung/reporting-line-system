@@ -315,7 +315,7 @@ document.querySelector("#permission-form").addEventListener("submit", async (eve
 // ---------------------------------------------------------------------------
 // DIAGRAM EDITOR
 // ---------------------------------------------------------------------------
-const NODE_W = 140;
+const NODE_W = 172;
 const NODE_H = 48;
 const LEVEL_H = 100;   // vertical gap between level rows
 const LEFT_PAD = 60;
@@ -648,6 +648,16 @@ function drawDiagram(svg, users, options) {
 
     g.addEventListener("click", () => onNodeClick(u));
     svg.appendChild(g);
+
+    // Keep labels inside the node box: if a name/level label is wider than the
+    // node, compress it horizontally so adjacent nodes never overlap.
+    const maxTextW = NODE_W - 12;
+    [nameText, levelText].forEach((t) => {
+      if (t.getComputedTextLength && t.getComputedTextLength() > maxTextW) {
+        t.setAttribute("textLength", maxTextW);
+        t.setAttribute("lengthAdjust", "spacingAndGlyphs");
+      }
+    });
   });
 
   // Emphasise the selected user's reporting line (the upward chain of edges).
