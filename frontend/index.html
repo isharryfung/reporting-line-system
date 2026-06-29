@@ -24,6 +24,7 @@
       <button class="tab-btn active" data-tab="overview">Overview</button>
       <button class="tab-btn" data-tab="diagram">Diagram Editor</button>
       <button class="tab-btn" data-tab="testcase-diagram">Test Case Diagram</button>
+      <button class="tab-btn" data-tab="thirty-cases">30 Testcase Diagram</button>
       <button class="tab-btn" data-tab="seed-editor">Seed Data Editor</button>
       <button class="tab-btn" data-tab="simulation">Simulation</button>
       <button class="tab-btn" data-tab="scenario-lab">Scenario Lab</button>
@@ -217,6 +218,39 @@
             <div class="button-row">
               <button type="button" id="testcase-edit-apply">Apply</button>
               <button type="button" id="testcase-edit-cancel" class="btn-secondary">Cancel</button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- ===== 30 TESTCASE DIAGRAM TAB ===== -->
+      <div id="tab-thirty-cases" class="tab-content hidden">
+        <section class="card">
+          <div class="diagram-header">
+            <h2>30 Testcase Diagram</h2>
+            <p class="hint">
+              Choose a test case on the left to see its <strong>target reporting
+              line</strong> highlighted (bold) on the ITSO &amp; HRO diagram on the
+              right. The 30 cases cover acting &amp; coverage, matrix &amp; dual
+              reporting, hierarchy anomalies, temporal &amp; effective dating, and
+              special entities. Nothing here is saved.
+            </p>
+          </div>
+          <div class="thirty-cases-workspace">
+            <aside class="thirty-cases-list">
+              <ul id="thirty-cases-cases"></ul>
+            </aside>
+            <div class="thirty-cases-diagram">
+              <div class="diagram-container">
+                <svg id="thirty-cases-svg" width="100%" height="540"></svg>
+              </div>
+              <div id="thirty-cases-detail" class="testcase-result">
+                <h3 id="thirty-cases-title">Select a test case</h3>
+                <p id="thirty-cases-scenario" class="testcase-wording">
+                  Pick a case on the left to bold its target reporting line.
+                </p>
+                <p id="thirty-cases-method" class="hint"></p>
+              </div>
             </div>
           </div>
         </section>

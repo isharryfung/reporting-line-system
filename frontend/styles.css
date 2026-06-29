@@ -368,6 +368,18 @@ th {
   stroke-width: 4;
 }
 
+/* Scenario-specific target reporting line on the 30 Testcase Diagram: a bold
+   gold overlay link for overrides / skip-level / fallback that have no solid
+   edge in the base org chart. */
+.target-edge {
+  fill: none;
+  stroke: #e8a200;
+  stroke-width: 4;
+  stroke-dasharray: 8 5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
 .level-band {
   fill: none;
   stroke: #dde5f0;
@@ -607,6 +619,64 @@ th {
 
 .testcase-result h3 {
   margin: 0 0 0.5rem;
+}
+
+/* 30 Testcase Diagram: case list on the left, diagram on the right. */
+.thirty-cases-workspace {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+
+/* min-width:0 lets the 1fr track shrink so the wide diagram scrolls inside
+   .diagram-container instead of blowing out the grid track horizontally. */
+.thirty-cases-diagram {
+  min-width: 0;
+}
+
+.thirty-cases-list {
+  max-height: 600px;
+  overflow-y: auto;
+  border: 1px solid #d8e2f0;
+  border-radius: 12px;
+  padding: 0.5rem;
+  background: #fbfdff;
+}
+
+.thirty-cases-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.thirty-case-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  padding: 0.4rem 0.5rem;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.thirty-case-row:hover {
+  background: #eef4fd;
+}
+
+.thirty-case-row span {
+  display: flex;
+  flex-direction: column;
+}
+
+.thirty-case-cat {
+  color: #6a7a90;
+  font-size: 0.8rem;
+}
+
+@media (max-width: 800px) {
+  .thirty-cases-workspace {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Overlay controls panel for the Test Case Diagram. */
