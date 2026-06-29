@@ -582,13 +582,15 @@ function drawDiagram(svg, users, options) {
     usedColors.add(color);
 
     const edge = document.createElementNS(ns, "path");
+    // Draw from the subordinate up to the manager so the arrowhead (marker-end)
+    // points upwards, toward the person being reported to.
     if (Math.abs(x1 - x2) < 0.5) {
-      // Same column: a single straight vertical drop.
-      edge.setAttribute("d", `M ${x1} ${y1} L ${x2} ${y2}`);
+      // Same column: a single straight vertical rise.
+      edge.setAttribute("d", `M ${x2} ${y2} L ${x1} ${y1}`);
     } else {
       edge.setAttribute(
         "d",
-        `M ${x1} ${y1} L ${x1} ${midY} L ${x2} ${midY} L ${x2} ${y2}`
+        `M ${x2} ${y2} L ${x2} ${midY} L ${x1} ${midY} L ${x1} ${y1}`
       );
     }
     edge.setAttribute("class", "diagram-edge");
