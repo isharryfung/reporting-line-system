@@ -137,10 +137,10 @@ The browser UI is organized into eight tabs:
   entities, and the **Layer 1 corporate tier**) on the **left**; selecting one
   **bolds the target reporting line** on the combined **EXEC, ITSO & HRO**
   diagram on the **right**
-- A **Focus** selector lets you manually pick any EXEC/ITSO/HRO person after
-  choosing a case; the diagram then bolds that person's resolved reporting line
-  (walking their manager chain) instead of the case default. Choose **Use case
-  default** to restore the hardcoded scenario target
+- After choosing a case, **click any EXEC/ITSO/HRO person** in the diagram to
+  focus them; the diagram then bolds that person's resolved reporting line
+  (walking their manager chain) instead of the case default. Click the same
+  person again to restore the hardcoded scenario target
 - The diagram is read-only; nothing here is saved
 
 ### Seed Data Editor tab
