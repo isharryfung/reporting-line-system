@@ -423,6 +423,13 @@ function drawDiagram(svg, users, options) {
     if (!deptCodes.includes(code)) deptCodes.push(code);
   });
   deptCodes.sort();
+  // Place the corporate tier (EXEC) in the centre of the department columns
+  // rather than at the far left so the chart reads outward from the top tier.
+  const execIdx = deptCodes.indexOf("EXEC");
+  if (execIdx !== -1 && deptCodes.length > 1) {
+    deptCodes.splice(execIdx, 1);
+    deptCodes.splice(Math.floor(deptCodes.length / 2), 0, "EXEC");
+  }
   const groupByDept = deptCodes.length > 1;
 
   const COL_GAP = 20;    // gap between nodes within a department block
