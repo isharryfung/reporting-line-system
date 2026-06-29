@@ -2067,6 +2067,10 @@ const THIRTY_CASES = [
 let thirtyCasesReady = false;
 let thirtyCasesSelected = null;
 let thirtyCasesCategory = "";
+// When the user manually picks a Focus person, store their id here so the
+// diagram bolds that person's resolved reporting line instead of the case's
+// hardcoded target. null = use the case default. Non-persistent (no DB writes).
+let thirtyCasesFocusOverride = null;
 
 function thirtyCasesUsers() {
   const users = [];
@@ -2087,6 +2091,24 @@ function thirtyCasesFocusId(users, testCase) {
   const pool = inDept.length ? inDept : users;
   const deepest = pool.reduce((a, b) => (b.level_rank > a.level_rank ? b : a), pool[0]);
   return deepest ? deepest.id : null;
+}
+
+// Build a name-chain for a chosen Focus user by walking `manager_name` upward
+// to the top of the chart (dept head / School). Returns a single chain wrapped
+// in a list so it matches the shape `highlightTargetLine` consumes, e.g.
+// [["Boris","Ivan","School"]]. A lone person (no manager) yields no chain.
+function thirtyCasesFocusChain(users, userId) {
+  const start = users.find((u) => u.id === userId);
+  if (!start) return null;
+  const names = [start.name];
+  const seen = new Set([start.name]);
+  let current = start;
+  while (current && current.manager_name && !seen.has(current.manager_name)) {
+    names.push(current.manager_name);
+    seen.add(current.manager_name);
+    current = users.find((u) => u.name === current.manager_name);
+  }
+  return names.length > 1 ? [names] : null;
 }
 
 function initThirtyCases() {
@@ -2127,6 +2149,14 @@ function initThirtyCases() {
         applyThirtyCasesFilter();
       });
     }
+    const focusSel = document.getElementById("thirty-cases-focus");
+    if (focusSel) {
+      focusSel.addEventListener("change", () => {
+        thirtyCasesFocusOverride = focusSel.value ? Number(focusSel.value) : null;
+        renderThirtyCasesDiagram();
+        updateThirtyCasesDetail();
+      });
+    }
     thirtyCasesReady = true;
   }
   renderThirtyCasesDiagram();
@@ -2148,9 +2178,52 @@ function renderThirtyCasesDiagram() {
   const users = thirtyCasesUsers();
   const tc = THIRTY_CASES.find((c) => c.id === thirtyCasesSelected);
   drawDiagram(svg, users, { deptTag: true });
-  // Bold each case's scenario-specific target reporting line (override, acting,
-  // fallback, etc.) rather than the plain solid-line chain to the dept head.
-  highlightTargetLine(svg, users, tc ? tc.target : null);
+  // When the user picks a Focus person, bold that person's resolved reporting
+  // line; otherwise fall back to the case's hardcoded scenario target.
+  const chains = thirtyCasesFocusOverride != null
+    ? thirtyCasesFocusChain(users, thirtyCasesFocusOverride)
+    : (tc ? tc.target : null);
+  highlightTargetLine(svg, users, chains);
+}
+
+// Populate the Focus selector from the current case's department users, keeping
+// "Use case default" so the original scenario target can be restored.
+function populateThirtyCasesFocus() {
+  const sel = document.getElementById("thirty-cases-focus");
+  if (!sel) return;
+  const users = thirtyCasesUsers();
+  sel.replaceChildren();
+  sel.append(createOption("", "Use case default"));
+  users
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .forEach((u) =>
+      sel.append(createOption(u.id, `${u.name} — ${u.department_code} / ${u.level_name}`))
+    );
+  sel.value = thirtyCasesFocusOverride != null ? String(thirtyCasesFocusOverride) : "";
+  sel.disabled = thirtyCasesSelected == null;
+}
+
+// Update the detail panel text to reflect the case default or chosen focus line.
+function updateThirtyCasesDetail() {
+  const tc = THIRTY_CASES.find((c) => c.id === thirtyCasesSelected);
+  if (!tc) return;
+  document.getElementById("thirty-cases-title").textContent = `${tc.id}. ${tc.title} — ${tc.category}`;
+  document.getElementById("thirty-cases-scenario").textContent = tc.scenario;
+  let line;
+  if (thirtyCasesFocusOverride != null) {
+    const users = thirtyCasesUsers();
+    const person = users.find((u) => u.id === thirtyCasesFocusOverride);
+    const chain = thirtyCasesFocusChain(users, thirtyCasesFocusOverride);
+    line = chain
+      ? `Focus line: ${chain.map((c) => c.join(" → ")).join("  •  ")}`
+      : `Focus line: ${person ? person.name : "?"} — top of chain, no manager.`;
+  } else {
+    line = (tc.target && tc.target.length)
+      ? "Target line: " + tc.target.map((c) => c.join(" → ")).join("  •  ")
+      : "Target line: none — assignment inactive, workflow suspended.";
+  }
+  document.getElementById("thirty-cases-method").textContent = `${tc.method}  —  ${line}`;
 }
 
 // Bold the scenario-specific target reporting line(s) for a 30-case scenario.
@@ -2205,13 +2278,10 @@ function highlightTargetLine(svg, users, chains) {
 
 function selectThirtyCase(id) {
   thirtyCasesSelected = id;
-  const tc = THIRTY_CASES.find((c) => c.id === id);
-  document.getElementById("thirty-cases-title").textContent = `${tc.id}. ${tc.title} — ${tc.category}`;
-  document.getElementById("thirty-cases-scenario").textContent = tc.scenario;
-  const target = (tc.target && tc.target.length)
-    ? "Target line: " + tc.target.map((c) => c.join(" → ")).join("  •  ")
-    : "Target line: none — assignment inactive, workflow suspended.";
-  document.getElementById("thirty-cases-method").textContent = `${tc.method}  —  ${target}`;
+  // Reset any manual focus override so the case's hardcoded target shows first.
+  thirtyCasesFocusOverride = null;
+  populateThirtyCasesFocus();
+  updateThirtyCasesDetail();
   renderThirtyCasesDiagram();
 }
 
