@@ -109,6 +109,28 @@ def _get_active_manager(
     return manager
 
 
+def _get_department_head(session: Session, user: User) -> User | None:
+    """Walk the primary reporting line up to the Layer 2 Department Head.
+
+    Starting from ``user``, follow active primary managers until a top-level
+    (Department Head) user is reached and return that head, so second-level
+    approval is always capped at Layer 2 rather than stopping at the primary
+    manager's immediate manager. Returns ``None`` if no top-level head is
+    reachable, leaving the caller to fall back to the department approver.
+    """
+    current: User | None = user
+    visited: set[int] = set()
+    while current is not None and current.id not in visited:
+        visited.add(current.id)
+        if current.dept_level.is_top_level:
+            return current
+        line = _get_primary_reporting_line(session, current.id)
+        if line is None:
+            return None
+        current = session.get(User, line.manager_id)
+    return None
+
+
 def _detect_cycle(session: Session, start_user_id: int) -> bool:
     visited: set[int] = set()
     current_id = start_user_id
@@ -186,7 +208,12 @@ def _append_normal_steps(
     if not rule.requires_second_level:
         return
 
-    second_manager = _get_active_manager(session, primary_manager.id, "Second-level")
+    # Second-level approval escalates up to the Layer 2 Department Head, capped at
+    # that head: walk the primary reporting line above the primary manager until
+    # the department head is reached, rather than using only the primary
+    # manager's immediate manager. When the primary manager is already the head,
+    # no extra step is needed.
+    second_manager = _get_department_head(session, primary_manager)
     if second_manager is None:
         chain.steps.append(
             _build_fallback_step(
@@ -196,6 +223,8 @@ def _append_normal_steps(
                 explanation="Second-level manager missing, so department fallback applies.",
             )
         )
+        return
+    if second_manager.id == primary_manager.id:
         return
 
     chain.steps.append(
