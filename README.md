@@ -72,7 +72,7 @@ teams, each with its own reporting line up to the department head.
 
 ## Frontend POC
 
-The browser UI is organized into seven tabs:
+The browser UI is organized into eight tabs:
 
 ### Overview tab
 - Inspect seed users showing level, rank, org-unit, and team-lead status
@@ -108,6 +108,13 @@ The browser UI is organized into seven tabs:
   simulated in the same rolled-back transaction and **never saved**
 - Circular reporting lines created while editing are detected and reported
 - **Reset diagram** restores the official reporting lines
+
+### 30 Testcase Diagram tab
+- Lists all **30 enterprise test cases** (acting & coverage, matrix & dual
+  reporting, hierarchy anomalies & loops, temporal & effective dating, special
+  entities) on the **left**; selecting one **bolds the target reporting line**
+  on the combined **ITSO & HRO** diagram on the **right**
+- The diagram is read-only; nothing here is saved
 
 ### Seed Data Editor tab
 - Add / edit / remove **users**, **levels**, **departments**, **actions**, and

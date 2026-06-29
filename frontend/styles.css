@@ -609,6 +609,58 @@ th {
   margin: 0 0 0.5rem;
 }
 
+/* 30 Testcase Diagram: case list on the left, diagram on the right. */
+.thirty-cases-workspace {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+
+.thirty-cases-list {
+  max-height: 600px;
+  overflow-y: auto;
+  border: 1px solid #d8e2f0;
+  border-radius: 12px;
+  padding: 0.5rem;
+  background: #fbfdff;
+}
+
+.thirty-cases-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.thirty-case-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  padding: 0.4rem 0.5rem;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.thirty-case-row:hover {
+  background: #eef4fd;
+}
+
+.thirty-case-row span {
+  display: flex;
+  flex-direction: column;
+}
+
+.thirty-case-cat {
+  color: #6a7a90;
+  font-size: 0.8rem;
+}
+
+@media (max-width: 800px) {
+  .thirty-cases-workspace {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Overlay controls panel for the Test Case Diagram. */
 .testcase-overlay-panel {
   background: #fbfdff;

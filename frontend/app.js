@@ -53,6 +53,9 @@ document.querySelectorAll(".tab-btn").forEach((btn) => {
     if (target === "testcase-diagram" && bootstrap) {
       initTestCaseDiagram();
     }
+    if (target === "thirty-cases" && bootstrap) {
+      initThirtyCases();
+    }
     if (target === "seed-editor") {
       loadSeedData();
     }
@@ -1959,6 +1962,116 @@ function renderTestCaseOverlayResult(result) {
     }
     stepsEl.appendChild(li);
   });
+}
+
+// ---------------------------------------------------------------------------
+// 30 Testcase Diagram
+// ---------------------------------------------------------------------------
+// Each case is illustrated on the combined ITSO + HRO org chart. `focus`
+// nominates the staff member whose reporting line (upward chain to the
+// department head) is the "target reporting line" bolded when the case is
+// selected. Focus users are picked by name where the seed data is
+// deterministic, falling back to the deepest member of the named department.
+const THIRTY_CASES = [
+  { id: 1, category: "Acting & Coverage", title: "Skip-level Acting", focus: "Boris", focusDept: "ITSO", scenario: "A senior leader leaves and a junior employee acts for the whole department.", method: "Add an Acting record and assign the junior to the Acting Senior Leader job position; authority is inherited from that position." },
+  { id: 2, category: "Acting & Coverage", title: "Peer Coverage", focus: "Cara", focusDept: "ITSO", scenario: "Team A's manager is on leave; Team B's manager temporarily covers Team A.", method: "Give Team B's manager a second assignment to Acting Team A Head, covering two reporting lines." },
+  { id: 3, category: "Acting & Coverage", title: "Partial Acting", focus: "Cleo", focusDept: "ITSO", scenario: "Manager leaves; B covers leave approvals, C covers performance reviews.", method: "Decouple workflows by approval type: B under Administrative Head, C under Functional/Dotted-line position." },
+  { id: 4, category: "Acting & Coverage", title: "Dummy Head", focus: "Hannah", focusDept: "HRO", scenario: "A new department lacks a head, so a neighboring head is temporarily assigned.", method: "Assign the neighboring department head to the new department's Head job position." },
+  { id: 5, category: "Acting & Coverage", title: "Self-Approval", focus: "Ingrid", focusDept: "ITSO", scenario: "A manager acting in their own supervisor's role routes their leave back to themselves.", method: "Safeguard: if Submitter == Approver, roll up to next level or route to HR." },
+  { id: 6, category: "Acting & Coverage", title: "Handover Overlap", focus: "Isaac", focusDept: "ITSO", scenario: "Old and new managers occupy the same Head position during a 2-week overlap.", method: "Support over-hiring; HR specifies who holds approval authority during transition." },
+  { id: 7, category: "Matrix & Dual Reporting", title: "Cross-Department Project", focus: "Boris", focusDept: "ITSO", scenario: "An IT employee is seconded 100% to HR for a six-month project.", method: "Keep IT job position for payroll; add Override_Reports_To to the HR Project Manager for leave approval." },
+  { id: 8, category: "Matrix & Dual Reporting", title: "Split Allocation", focus: "Bruno", focusDept: "ITSO", scenario: "A professor spends 50% in two schools.", method: "Create two job assignments and define which is the main approval line." },
+  { id: 9, category: "Matrix & Dual Reporting", title: "Co-Heads", focus: "Cara", focusDept: "ITSO", scenario: "A team has two equal Co-Directors.", method: "Link the Org Unit to multiple Co-Head positions; workflow is Any-One-Approve." },
+  { id: 10, category: "Matrix & Dual Reporting", title: "Executive Assistant Delegation", focus: "Ivan", focusDept: "ITSO", scenario: "An executive never logs in; their EA handles all approvals.", method: "Delegation module: executive delegates authority to the EA; audit log records on-behalf-of." },
+  { id: 11, category: "Matrix & Dual Reporting", title: "Tech Lead vs People Manager", focus: "Dana", focusDept: "ITSO", scenario: "Tech lead manages work; another manager handles people matters.", method: "Tech Lead/Dotted-line for projects; People Manager as solid-line manager." },
+  { id: 12, category: "Matrix & Dual Reporting", title: "Global Matrix", focus: "Hope", focusDept: "HRO", scenario: "HK employee on a Local Line reports functionally to a Global Head in the US.", method: "Use Local Line for HR/leave; store Global Head in an override field for business reporting." },
+  { id: 13, category: "Hierarchy Anomalies & Loops", title: "Circular Reporting Line", focus: "Isaac", focusDept: "ITSO", scenario: "A→B→C and C acts in a role reporting back to A.", method: "Run DFS/BFS validation before saving; reject cycles with a validation error." },
+  { id: 14, category: "Hierarchy Anomalies & Loops", title: "Orphan Node", focus: "Carl", focusDept: "ITSO", scenario: "An employee's team is dissolved; they are not reassigned.", method: "If Org_Unit_ID is null, treat as Orphan and route to HRBP/HR queue." },
+  { id: 15, category: "Hierarchy Anomalies & Loops", title: "Super Flat Organization", focus: "Ivan", focusDept: "ITSO", scenario: "CEO directly manages 150 juniors with no middle layer.", method: "Allow one manager many direct reports; support large span-of-control queries." },
+  { id: 16, category: "Hierarchy Anomalies & Loops", title: "Skip-Level Reporting", focus: "Bonnie", focusDept: "ITSO", scenario: "A junior bypasses their supervisor to report to a grandparent manager.", method: "Use Override_Reports_To pointing to the grandparent manager." },
+  { id: 17, category: "Hierarchy Anomalies & Loops", title: "One-Man Department", focus: "Hannah", focusDept: "HRO", scenario: "A department has only one person, who is also the head.", method: "Normal case: that person's requests roll up to next level." },
+  { id: 18, category: "Hierarchy Anomalies & Loops", title: "Parking Department", focus: "Hilda", focusDept: "HRO", scenario: "A special department parks staff pending redundancy or long leave.", method: "Special Org Unit with auto-approval or centralized HR handling." },
+  { id: 19, category: "Temporal & Effective Dating", title: "Future Transfer", focus: "Boris", focusDept: "ITSO", scenario: "Future transfer set; leave applied for after the effective date.", method: "Resolve approver by event date; route to the future New Manager." },
+  { id: 20, category: "Temporal & Effective Dating", title: "Retroactive Promotion", focus: "Cyrus", focusDept: "ITSO", scenario: "Promotion entered late; early requests approved by wrong person.", method: "Completed transactions not re-routed; audit log flags the prior approver." },
+  { id: 21, category: "Temporal & Effective Dating", title: "Manager Gap", focus: "Hazel", focusDept: "HRO", scenario: "Old manager leaves Fri, new starts Wed; who approves in the gap?", method: "Roll up to Next-Level Manager or queue until new manager is effective." },
+  { id: 22, category: "Temporal & Effective Dating", title: "Management Trainee Rotation", focus: "Dean", focusDept: "ITSO", scenario: "A trainee rotates teams every three months.", method: "Preconfigure rotational positions with start/end dates; auto-switch org unit." },
+  { id: 23, category: "Temporal & Effective Dating", title: "No Pay Leave", focus: "Daisy", focusDept: "ITSO", scenario: "A staff is on unpaid leave for a year, no approvals allowed.", method: "Set assignment Inactive; suspend workflow responsibilities." },
+  { id: 24, category: "Temporal & Effective Dating", title: "Re-Hire", focus: "Hugo", focusDept: "HRO", scenario: "An employee leaves and returns in a new role two years later.", method: "New assignment, same Employee ID; historical lines unaffected." },
+  { id: 25, category: "Special Entities", title: "External Consultant / Vendor", focus: "Isaac", focusDept: "ITSO", scenario: "Outsourced IT team reports leave to an internal IT Manager.", method: "Create a Contingent Worker identity and attach to the relevant Org Unit." },
+  { id: 26, category: "Special Entities", title: "Cross-Company Secondment", focus: "Hannah", focusDept: "HRO", scenario: "Affiliate A staff seconded to Affiliate B as manager.", method: "Multi-entity architecture: A's employee occupies a position in B." },
+  { id: 27, category: "Special Entities", title: "Job Sharing", focus: "Bruno", focusDept: "ITSO", scenario: "Two part-time employees share one full-time role.", method: "Both assigned to the same position at 0.5 FTE each." },
+  { id: 28, category: "Special Entities", title: "Shell Position", focus: "Bianca", focusDept: "ITSO", scenario: "Budgeted in Dept A but works in Dept B.", method: "Keep Dept A for budget; override reporting line to Dept B." },
+  { id: 29, category: "Special Entities", title: "Terminated Approver", focus: "Bonnie", focusDept: "ITSO", scenario: "A left manager keeps receiving routed requests.", method: "Check approver status; if terminated, fallback to HR." },
+  { id: 30, category: "Special Entities", title: "Union / Special Committee", focus: "Hope", focusDept: "HRO", scenario: "Union matters report to the union chair, not the daily manager.", method: "Dotted-line or dedicated Committee Org Unit for specific request types." },
+];
+
+let thirtyCasesReady = false;
+let thirtyCasesSelected = null;
+
+function thirtyCasesUsers() {
+  const users = [];
+  ["ITSO", "HRO"].forEach((code) => {
+    const chart = bootstrap.org_charts[code];
+    if (chart) collectChartUsers(chart, users);
+  });
+  return users;
+}
+
+// Resolve a case's focus member: prefer the named user, otherwise fall back to
+// the deepest (highest level rank) member of the named department so a chain is
+// always available to bold.
+function thirtyCasesFocusId(users, testCase) {
+  const byName = users.find((u) => u.name === testCase.focus);
+  if (byName) return byName.id;
+  const inDept = users.filter((u) => u.department_code === testCase.focusDept);
+  const pool = inDept.length ? inDept : users;
+  const deepest = pool.reduce((a, b) => (b.level_rank > a.level_rank ? b : a), pool[0]);
+  return deepest ? deepest.id : null;
+}
+
+function initThirtyCases() {
+  const list = document.getElementById("thirty-cases-cases");
+  if (!list) return;
+  if (!thirtyCasesReady) {
+    list.replaceChildren(
+      ...THIRTY_CASES.map((tc) => {
+        const li = document.createElement("li");
+        const label = document.createElement("label");
+        label.className = "thirty-case-row";
+        const input = document.createElement("input");
+        input.type = "radio";
+        input.name = "thirty-case";
+        input.value = String(tc.id);
+        input.addEventListener("change", () => selectThirtyCase(tc.id));
+        const text = document.createElement("span");
+        text.innerHTML = `<strong>${tc.id}. ${tc.title}</strong><span class="thirty-case-cat">${tc.category}</span>`;
+        label.append(input, text);
+        li.appendChild(label);
+        return li;
+      })
+    );
+    thirtyCasesReady = true;
+  }
+  renderThirtyCasesDiagram();
+}
+
+function renderThirtyCasesDiagram() {
+  const svg = document.getElementById("thirty-cases-svg");
+  if (!svg) return;
+  const users = thirtyCasesUsers();
+  const tc = THIRTY_CASES.find((c) => c.id === thirtyCasesSelected);
+  const selectedId = tc ? thirtyCasesFocusId(users, tc) : null;
+  drawDiagram(svg, users, { deptTag: true });
+  highlightReportingLine(svg, selectedId);
+}
+
+function selectThirtyCase(id) {
+  thirtyCasesSelected = id;
+  const tc = THIRTY_CASES.find((c) => c.id === id);
+  document.getElementById("thirty-cases-title").textContent = `${tc.id}. ${tc.title} — ${tc.category}`;
+  document.getElementById("thirty-cases-scenario").textContent = tc.scenario;
+  document.getElementById("thirty-cases-method").textContent = tc.method;
+  renderThirtyCasesDiagram();
 }
 
 // ---------------------------------------------------------------------------
