@@ -1979,7 +1979,7 @@ function renderTestCaseOverlayResult(result) {
 // ---------------------------------------------------------------------------
 // 30 Testcase Diagram
 // ---------------------------------------------------------------------------
-// Each case is illustrated on the combined ITSO + HRO org chart. `focus`
+// Each case is illustrated on the combined EXEC + ITSO + HRO org chart. `focus`
 // nominates the staff member whose reporting line (upward chain to the
 // department head) is the "target reporting line" bolded when the case is
 // selected. Focus users are picked by name where the seed data is
@@ -2015,6 +2015,9 @@ const THIRTY_CASES = [
   { id: 28, category: "Special Entities", title: "Shell Position", focus: "Bianca", focusDept: "ITSO", scenario: "Budgeted in Dept A but works in Dept B.", method: "Keep Dept A for budget; override reporting line to Dept B.", target: [["Bianca", "Hannah"]] },
   { id: 29, category: "Special Entities", title: "Terminated Approver", focus: "Bonnie", focusDept: "ITSO", scenario: "A left manager keeps receiving routed requests.", method: "Check approver status; if terminated, fallback to HR.", target: [["Bonnie", "Ivan"]] },
   { id: 30, category: "Special Entities", title: "Union / Special Committee", focus: "Hope", focusDept: "HRO", scenario: "Union matters report to the union chair, not the daily manager.", method: "Dotted-line or dedicated Committee Org Unit for specific request types.", target: [["Hope", "Hannah"]] },
+  { id: 31, category: "Corporate Tier (Layer 1)", title: "Dept Head Escalation", focus: "Ivan", focusDept: "EXEC", scenario: "An ITSO department head escalates a request up to the corporate School tier.", method: "Roll up past the department head to the Layer 1 School position.", target: [["Ivan", "School"]] },
+  { id: 32, category: "Corporate Tier (Layer 1)", title: "Provost Reporting Line", focus: "School", focusDept: "EXEC", scenario: "The School reports to the VP, who reports to the Provost.", method: "Walk the corporate tier chain School → VP → Provost.", target: [["School", "VP"], ["VP", "Provost"]] },
+  { id: 33, category: "Corporate Tier (Layer 1)", title: "Cross-Department Roll-Up", focus: "School", focusDept: "EXEC", scenario: "Both ITSO and HRO department heads roll up to the same School position.", method: "Multiple department heads report into one shared Layer 1 School.", target: [["Ivan", "School"], ["Hannah", "School"]] },
 ];
 
 let thirtyCasesReady = false;
@@ -2022,7 +2025,7 @@ let thirtyCasesSelected = null;
 
 function thirtyCasesUsers() {
   const users = [];
-  ["ITSO", "HRO"].forEach((code) => {
+  ["EXEC", "ITSO", "HRO"].forEach((code) => {
     const chart = bootstrap.org_charts[code];
     if (chart) collectChartUsers(chart, users);
   });

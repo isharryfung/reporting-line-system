@@ -126,10 +126,11 @@ The browser UI is organized into eight tabs:
 - **Reset diagram** restores the official reporting lines
 
 ### 30 Testcase Diagram tab
-- Lists all **30 enterprise test cases** (acting & coverage, matrix & dual
+- Lists the enterprise test cases (acting & coverage, matrix & dual
   reporting, hierarchy anomalies & loops, temporal & effective dating, special
-  entities) on the **left**; selecting one **bolds the target reporting line**
-  on the combined **ITSO & HRO** diagram on the **right**
+  entities, and the **Layer 1 corporate tier**) on the **left**; selecting one
+  **bolds the target reporting line** on the combined **EXEC, ITSO & HRO**
+  diagram on the **right**
 - The diagram is read-only; nothing here is saved
 
 ### Seed Data Editor tab
