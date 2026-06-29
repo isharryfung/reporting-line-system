@@ -2117,33 +2117,23 @@ function thirtyCasesFocusChain(users, userId) {
 function initThirtyCases() {
   const list = document.getElementById("thirty-cases-cases");
   if (!list) return;
-  const body = list.tBodies[0] || list;
   if (!thirtyCasesReady) {
-    body.replaceChildren(
+    list.replaceChildren(
       ...THIRTY_CASES.map((tc) => {
-        const tr = document.createElement("tr");
-        tr.dataset.category = tc.category;
-        tr.className = "thirty-case-row";
-        const num = document.createElement("td");
+        const li = document.createElement("li");
+        li.dataset.category = tc.category;
+        const label = document.createElement("label");
+        label.className = "thirty-case-row";
         const input = document.createElement("input");
         input.type = "radio";
         input.name = "thirty-case";
         input.value = String(tc.id);
         input.addEventListener("change", () => selectThirtyCase(tc.id));
-        num.append(input, document.createTextNode(` ${tc.id}`));
-        const title = document.createElement("td");
-        title.innerHTML = `<strong>${tc.title}</strong>`;
-        const cat = document.createElement("td");
-        cat.className = "thirty-case-cat";
-        cat.textContent = tc.category;
-        const scn = document.createElement("td");
-        scn.textContent = tc.scenario;
-        tr.append(num, title, cat, scn);
-        tr.addEventListener("click", () => {
-          input.checked = true;
-          selectThirtyCase(tc.id);
-        });
-        return tr;
+        const text = document.createElement("span");
+        text.innerHTML = `<strong>${tc.id}. ${tc.title}</strong><span class="thirty-case-cat">${tc.category}</span>`;
+        label.append(input, text);
+        li.appendChild(label);
+        return li;
       })
     );
     const filter = document.getElementById("thirty-cases-filter");
@@ -2171,9 +2161,9 @@ function initThirtyCases() {
 function applyThirtyCasesFilter() {
   const list = document.getElementById("thirty-cases-cases");
   if (!list) return;
-  list.querySelectorAll("tbody tr").forEach((tr) => {
-    const match = !thirtyCasesCategory || tr.dataset.category === thirtyCasesCategory;
-    tr.hidden = !match;
+  list.querySelectorAll("li").forEach((li) => {
+    const match = !thirtyCasesCategory || li.dataset.category === thirtyCasesCategory;
+    li.hidden = !match;
   });
 }
 
