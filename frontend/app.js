@@ -322,6 +322,36 @@ const LEFT_PAD = 60;
 const TOP_PAD = 40;
 const LEVEL_LABEL_X = 8;
 
+// Distinct colors for reporting lines, assigned per individual person so that
+// each subordinate's line up to their manager is visually distinct — even when
+// several people at the same rank report into the same higher rank. For
+// example, for L8 → L9 both Belle(L8) and Biance(L8) report into L9, but
+// Belle's line and Biance's line each get their own color. Palette is chosen
+// for good contrast; it wraps around if there are more people than colors.
+const EDGE_COLORS = [
+  "#4a7fcb", // blue
+  "#d62728", // red
+  "#2ca02c", // green
+  "#e8743b", // orange
+  "#9467bd", // purple
+  "#17a2b8", // teal
+  "#bc5090", // magenta
+  "#8c6d31", // brown
+];
+
+// Return a stable color for the given zero-based assignment index, wrapping
+// around the palette when there are more people than available colors.
+function edgeColorForIndex(index) {
+  const len = EDGE_COLORS.length;
+  const idx = ((Number(index) % len) + len) % len;
+  return EDGE_COLORS[idx];
+}
+
+// Build a DOM-safe arrow-marker id for a given color (e.g. "#4a7fcb" -> "arrow-4a7fcb").
+function rankArrowId(color) {
+  return "arrow-" + color.replace(/[^a-z0-9]/gi, "");
+}
+
 function collectChartUsers(chart, users) {
   chart.org_units.forEach((ou) => {
     ou.members.forEach((m) => {
@@ -510,6 +540,21 @@ function drawDiagram(svg, users, options) {
   const edgeGroup = document.createElementNS(ns, "g");
   svg.appendChild(edgeGroup);
 
+  // Each edge is colored per individual subordinate (the person whose line runs
+  // up to their manager), so two people at the same rank reporting into the same
+  // higher rank — e.g. Belle(L8) and Biance(L8) both reporting to L9 — each get
+  // their own distinct color. Colors are assigned in a stable order so a given
+  // person keeps the same color across re-renders.
+  const usedColors = new Set();
+  const personColor = {};  // user.id → color
+  let colorCursor = 0;
+  users.forEach((u) => {
+    if (personColor[u.id] === undefined) {
+      personColor[u.id] = edgeColorForIndex(colorCursor);
+      colorCursor += 1;
+    }
+  });
+
   users.forEach((u) => {
     if (!u.manager_name) return;
     const manager = users.find((m) => m.name === u.manager_name);
@@ -518,24 +563,53 @@ function drawDiagram(svg, users, options) {
     const to = posMap[u.id];
     if (!from || !to) return;
 
-    const line = document.createElementNS(ns, "line");
-    line.setAttribute("x1", from.x + NODE_W / 2);
-    line.setAttribute("y1", from.y + NODE_H);
-    line.setAttribute("x2", to.x + NODE_W / 2);
-    line.setAttribute("y2", to.y);
-    line.setAttribute("class", "diagram-edge");
-    // Arrow marker
-    line.setAttribute("marker-end", "url(#arrow)");
-    edgeGroup.appendChild(line);
+    // Use an orthogonal (elbow) connector instead of a straight diagonal so the
+    // reporting lines between ranks stay vertical/horizontal and don't cross
+    // over each other or through nodes. The line drops straight down from the
+    // manager, runs horizontally along a band in the gap, then drops straight
+    // down into the child node — the standard, easy-to-read org-chart style.
+    const x1 = from.x + NODE_W / 2;
+    const y1 = from.y + NODE_H;
+    const x2 = to.x + NODE_W / 2;
+    const y2 = to.y;
+    // Horizontal band sits midway in the vertical gap between the two nodes.
+    const midY = y1 + (y2 - y1) / 2;
+
+    const color = personColor[u.id];
+    usedColors.add(color);
+
+    const edge = document.createElementNS(ns, "path");
+    if (Math.abs(x1 - x2) < 0.5) {
+      // Same column: a single straight vertical drop.
+      edge.setAttribute("d", `M ${x1} ${y1} L ${x2} ${y2}`);
+    } else {
+      edge.setAttribute(
+        "d",
+        `M ${x1} ${y1} L ${x1} ${midY} L ${x2} ${midY} L ${x2} ${y2}`
+      );
+    }
+    edge.setAttribute("class", "diagram-edge");
+    edge.style.stroke = color;
+    // Record the child→parent relationship so the selected user's reporting
+    // line (the upward chain of edges) can be emphasised on demand.
+    edge.dataset.childId = u.id;
+    edge.dataset.parentId = manager.id;
+    // Arrow marker, color-matched to this edge's stroke.
+    edge.setAttribute("marker-end", `url(#${rankArrowId(color)})`);
+    edgeGroup.appendChild(edge);
   });
 
-  // Arrow marker definition
+  // Arrow marker definitions — one per color actually used, so each arrowhead
+  // matches the color of its reporting line.
   const defs = document.createElementNS(ns, "defs");
-  defs.innerHTML = `
-    <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-      <path d="M0,0 L0,6 L8,3 z" fill="#4a7fcb" />
-    </marker>
-  `;
+  defs.innerHTML = Array.from(usedColors)
+    .map(
+      (color) => `
+    <marker id="${rankArrowId(color)}" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="${color}" />
+    </marker>`
+    )
+    .join("");
   svg.insertBefore(defs, svg.firstChild);
 
   // Nodes
@@ -575,6 +649,33 @@ function drawDiagram(svg, users, options) {
     g.addEventListener("click", () => onNodeClick(u));
     svg.appendChild(g);
   });
+
+  // Emphasise the selected user's reporting line (the upward chain of edges).
+  highlightReportingLine(svg, selectedId);
+}
+
+// Bold the reporting-line chain for the given user by walking the rendered
+// edges upward (child → parent) and toggling the `highlighted` class. Passing a
+// null/undefined userId simply clears any existing emphasis. Operates purely on
+// the edges' data-child-id / data-parent-id attributes so it works for any SVG
+// produced by drawDiagram without needing the original users array.
+function highlightReportingLine(svg, userId) {
+  if (!svg) return;
+  const edges = Array.from(svg.querySelectorAll(".diagram-edge"));
+  edges.forEach((e) => e.classList.remove("highlighted"));
+  if (userId == null) return;
+  const edgeByChild = {};
+  edges.forEach((e) => {
+    edgeByChild[e.dataset.childId] = e;
+  });
+  let current = String(userId);
+  const visited = new Set();
+  while (edgeByChild[current] && !visited.has(current)) {
+    visited.add(current);
+    const edge = edgeByChild[current];
+    edge.classList.add("highlighted");
+    current = edge.dataset.parentId;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -608,6 +709,8 @@ function openEditPanel(user) {
   document.querySelectorAll(".diagram-node").forEach((n) => {
     n.classList.toggle("selected", Number(n.dataset.userId) === user.id);
   });
+  // Bold this user's reporting line in the diagram.
+  highlightReportingLine(document.getElementById("diagram-svg"), user.id);
 
   // Populate level options from seed data
   loadSeedDataIfNeeded().then(() => {
@@ -650,6 +753,7 @@ function closeEditPanel() {
   editPanel.classList.add("hidden");
   selectedNode = null;
   document.querySelectorAll(".diagram-node").forEach((n) => n.classList.remove("selected"));
+  highlightReportingLine(document.getElementById("diagram-svg"), null);
   hideError(editError);
 }
 
