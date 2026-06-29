@@ -325,6 +325,17 @@ const LEFT_PAD = 60;
 const TOP_PAD = 40;
 const LEVEL_LABEL_X = 8;
 
+// Layer model: each level rank belongs to one of four reporting-line layers.
+// Layer 1 = ranks 1–3 (Provost/VP/School), Layer 2 = rank 4 (Dept Head),
+// Layer 3 = ranks 5–7 (Senior Manager/Manager/Systems Analyst), Layer 4 =
+// ranks 8–9 (Analyst Programmer/Programmer). Used to color rows by layer band.
+function layerForRank(rank) {
+  if (rank <= 3) return 1;
+  if (rank === 4) return 2;
+  if (rank <= 7) return 3;
+  return 4;
+}
+
 // Distinct colors for reporting lines, assigned per individual person so that
 // each subordinate's line up to their manager is visually distinct — even when
 // several people at the same rank report into the same higher rank. For
@@ -500,6 +511,32 @@ function drawDiagram(svg, users, options) {
   svg.style.height = `${svgH}px`;
 
   const ns = "http://www.w3.org/2000/svg";
+
+  // Layer bands: shade each contiguous group of level rows by their reporting
+  // layer so the four-tier structure (Layer 1–4) reads at a glance. Drawn first
+  // so they sit behind separators, edges, and nodes.
+  for (let i = 0; i < sortedLevels.length; i++) {
+    const layer = layerForRank(sortedLevels[i]);
+    let j = i;
+    while (j + 1 < sortedLevels.length && layerForRank(sortedLevels[j + 1]) === layer) j++;
+    const bandTop = TOP_PAD + i * LEVEL_H - 30;
+    const bandBottom = TOP_PAD + j * LEVEL_H + NODE_H + 14;
+    const band = document.createElementNS(ns, "rect");
+    band.setAttribute("x", 0);
+    band.setAttribute("y", bandTop);
+    band.setAttribute("width", svgW);
+    band.setAttribute("height", bandBottom - bandTop);
+    band.setAttribute("class", `layer-band layer-band-${layer}`);
+    svg.appendChild(band);
+    // Layer caption on the left margin, aligned with the first row of the band.
+    const caption = document.createElementNS(ns, "text");
+    caption.setAttribute("x", LEVEL_LABEL_X);
+    caption.setAttribute("y", TOP_PAD + i * LEVEL_H - 16);
+    caption.setAttribute("class", "layer-band-label");
+    caption.textContent = `Layer ${layer}`;
+    svg.appendChild(caption);
+    i = j;
+  }
 
   // Department group headers and separators (only in the combined view).
   if (groupByDept) {
