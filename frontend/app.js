@@ -2067,7 +2067,7 @@ const THIRTY_CASES = [
 let thirtyCasesReady = false;
 let thirtyCasesSelected = null;
 let thirtyCasesCategory = "";
-// When the user manually picks a Focus person, store their id here so the
+// When the user clicks a Focus person, store their id here so the
 // diagram bolds that person's resolved reporting line instead of the case's
 // hardcoded target. null = use the case default. Non-persistent (no DB writes).
 let thirtyCasesFocusOverride = null;
@@ -2149,14 +2149,6 @@ function initThirtyCases() {
         applyThirtyCasesFilter();
       });
     }
-    const focusSel = document.getElementById("thirty-cases-focus");
-    if (focusSel) {
-      focusSel.addEventListener("change", () => {
-        thirtyCasesFocusOverride = focusSel.value ? Number(focusSel.value) : null;
-        renderThirtyCasesDiagram();
-        updateThirtyCasesDetail();
-      });
-    }
     thirtyCasesReady = true;
   }
   renderThirtyCasesDiagram();
@@ -2177,31 +2169,22 @@ function renderThirtyCasesDiagram() {
   if (!svg) return;
   const users = thirtyCasesUsers();
   const tc = THIRTY_CASES.find((c) => c.id === thirtyCasesSelected);
-  drawDiagram(svg, users, { deptTag: true });
-  // When the user picks a Focus person, bold that person's resolved reporting
+  drawDiagram(svg, users, {
+    deptTag: true,
+    selectedId: thirtyCasesFocusOverride,
+    onNodeClick: (u) => {
+      // Toggle focus on/off: clicking the focused person clears back to default.
+      thirtyCasesFocusOverride = thirtyCasesFocusOverride === u.id ? null : u.id;
+      renderThirtyCasesDiagram();
+      updateThirtyCasesDetail();
+    },
+  });
+  // When the user clicks a Focus person, bold that person's resolved reporting
   // line; otherwise fall back to the case's hardcoded scenario target.
   const chains = thirtyCasesFocusOverride != null
     ? thirtyCasesFocusChain(users, thirtyCasesFocusOverride)
     : (tc ? tc.target : null);
   highlightTargetLine(svg, users, chains);
-}
-
-// Populate the Focus selector from the current case's department users, keeping
-// "Use case default" so the original scenario target can be restored.
-function populateThirtyCasesFocus() {
-  const sel = document.getElementById("thirty-cases-focus");
-  if (!sel) return;
-  const users = thirtyCasesUsers();
-  sel.replaceChildren();
-  sel.append(createOption("", "Use case default"));
-  users
-    .slice()
-    .sort((a, b) => a.name.localeCompare(b.name))
-    .forEach((u) =>
-      sel.append(createOption(u.id, `${u.name} — ${u.department_code} / ${u.level_name}`))
-    );
-  sel.value = thirtyCasesFocusOverride != null ? String(thirtyCasesFocusOverride) : "";
-  sel.disabled = thirtyCasesSelected == null;
 }
 
 // Update the detail panel text to reflect the case default or chosen focus line.
@@ -2280,7 +2263,6 @@ function selectThirtyCase(id) {
   thirtyCasesSelected = id;
   // Reset any manual focus override so the case's hardcoded target shows first.
   thirtyCasesFocusOverride = null;
-  populateThirtyCasesFocus();
   updateThirtyCasesDetail();
   renderThirtyCasesDiagram();
 }
