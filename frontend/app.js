@@ -2066,6 +2066,7 @@ const THIRTY_CASES = [
 
 let thirtyCasesReady = false;
 let thirtyCasesSelected = null;
+let thirtyCasesCategory = "";
 
 function thirtyCasesUsers() {
   const users = [];
@@ -2095,6 +2096,7 @@ function initThirtyCases() {
     list.replaceChildren(
       ...THIRTY_CASES.map((tc) => {
         const li = document.createElement("li");
+        li.dataset.category = tc.category;
         const label = document.createElement("label");
         label.className = "thirty-case-row";
         const input = document.createElement("input");
@@ -2109,9 +2111,35 @@ function initThirtyCases() {
         return li;
       })
     );
+    const filter = document.getElementById("thirty-cases-filter");
+    if (filter) {
+      const categories = [...new Set(THIRTY_CASES.map((tc) => tc.category))];
+      filter.append(
+        ...categories.map((cat) => {
+          const opt = document.createElement("option");
+          opt.value = cat;
+          opt.textContent = cat;
+          return opt;
+        })
+      );
+      filter.addEventListener("change", () => {
+        thirtyCasesCategory = filter.value;
+        applyThirtyCasesFilter();
+      });
+    }
     thirtyCasesReady = true;
   }
   renderThirtyCasesDiagram();
+}
+
+// Show only cases whose category matches the selected filter (empty = all).
+function applyThirtyCasesFilter() {
+  const list = document.getElementById("thirty-cases-cases");
+  if (!list) return;
+  list.querySelectorAll("li").forEach((li) => {
+    const match = !thirtyCasesCategory || li.dataset.category === thirtyCasesCategory;
+    li.hidden = !match;
+  });
 }
 
 function renderThirtyCasesDiagram() {

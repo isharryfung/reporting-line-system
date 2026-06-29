@@ -666,6 +666,23 @@ th {
   padding: 0;
 }
 
+.thirty-cases-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.8rem;
+  color: #6a7a90;
+}
+
+.thirty-cases-filter select {
+  padding: 0.35rem 0.5rem;
+  border: 1px solid #d8e2f0;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 0.9rem;
+}
+
 .thirty-case-row {
   display: flex;
   gap: 0.5rem;
