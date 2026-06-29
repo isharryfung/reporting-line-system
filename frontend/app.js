@@ -2236,7 +2236,8 @@ function updateThirtyCasesDetail(simResult) {
     if (simResult && (simResult.overlay_steps || []).length) {
       // Real routing answer for this person in this case.
       const steps = simResult.overlay_steps;
-      line = `${who} → ` + steps.map((s) => `${s.approver} [${s.source}]`).join(" → ");
+      line = `Approver line for ${who} → ` +
+        steps.map((s) => `${s.approver} [${s.source}]`).join(" → ");
       if (approversEl) {
         approversEl.classList.remove("hidden");
         steps.forEach((s) => {
@@ -2248,7 +2249,6 @@ function updateThirtyCasesDetail(simResult) {
           approversEl.appendChild(li);
         });
       }
-      line = `Approver line for ${line}`;
     } else if (simResult && simResult.overlay_error) {
       line = `Approver line: ${simResult.overlay_error}`;
     } else {
