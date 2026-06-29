@@ -368,6 +368,18 @@ th {
   stroke-width: 4;
 }
 
+/* Scenario-specific target reporting line on the 30 Testcase Diagram: a bold
+   gold overlay link for overrides / skip-level / fallback that have no solid
+   edge in the base org chart. */
+.target-edge {
+  fill: none;
+  stroke: #e8a200;
+  stroke-width: 4;
+  stroke-dasharray: 8 5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
 .level-band {
   fill: none;
   stroke: #dde5f0;
