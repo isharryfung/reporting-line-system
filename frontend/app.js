@@ -2074,6 +2074,9 @@ let thirtyCasesCategory = "";
 // diagram bolds that person's resolved reporting line instead of the case's
 // hardcoded target. null = use the case default. Non-persistent (no DB writes).
 let thirtyCasesFocusOverride = null;
+// Resolved approval line (real routing simulation) for the clicked focus person
+// under the selected case's action; null until a person is clicked. Not persisted.
+let thirtyCasesSimChain = null;
 
 function thirtyCasesUsers() {
   const users = [];
@@ -2177,15 +2180,26 @@ function renderThirtyCasesDiagram() {
     selectedId: thirtyCasesFocusOverride,
     onNodeClick: (u) => {
       // Toggle focus on/off: clicking the focused person clears back to default.
-      thirtyCasesFocusOverride = thirtyCasesFocusOverride === u.id ? null : u.id;
-      renderThirtyCasesDiagram();
-      updateThirtyCasesDetail();
+      if (thirtyCasesFocusOverride === u.id) {
+        thirtyCasesFocusOverride = null;
+        thirtyCasesSimChain = null;
+        renderThirtyCasesDiagram();
+        updateThirtyCasesDetail();
+      } else {
+        thirtyCasesFocusOverride = u.id;
+        thirtyCasesSimChain = null;
+        renderThirtyCasesDiagram();
+        updateThirtyCasesDetail();
+        // Run the real routing engine for this person under the case's action,
+        // then re-render so the resolved approver line is bolded.
+        runThirtyCasesSimulation(u.id);
+      }
     },
   });
-  // When the user clicks a Focus person, bold that person's resolved reporting
-  // line; otherwise bold the case focus member's resolved line (same logic).
+  // When a person is clicked, bold their real routing-resolved approval line once
+  // the simulation returns; before that (and by default) bold the case target.
   const chains = thirtyCasesFocusOverride != null
-    ? thirtyCasesFocusChain(users, thirtyCasesFocusOverride)
+    ? (thirtyCasesSimChain || thirtyCasesFocusChain(users, thirtyCasesFocusOverride))
     : thirtyCasesTargetChain(users, tc);
   highlightTargetLine(svg, users, chains);
 }
@@ -2204,19 +2218,45 @@ function thirtyCasesTargetChain(users, testCase) {
 }
 
 // Update the detail panel text to reflect the case default or chosen focus line.
-function updateThirtyCasesDetail() {
+function updateThirtyCasesDetail(simResult) {
   const tc = THIRTY_CASES.find((c) => c.id === thirtyCasesSelected);
   if (!tc) return;
   document.getElementById("thirty-cases-title").textContent = `${tc.id}. ${tc.title} — ${tc.category}`;
   document.getElementById("thirty-cases-scenario").textContent = tc.scenario;
+  const approversEl = document.getElementById("thirty-cases-approvers");
+  if (approversEl) {
+    approversEl.replaceChildren();
+    approversEl.classList.add("hidden");
+  }
   let line;
   if (thirtyCasesFocusOverride != null) {
     const users = thirtyCasesUsers();
     const person = users.find((u) => u.id === thirtyCasesFocusOverride);
-    const chain = thirtyCasesFocusChain(users, thirtyCasesFocusOverride);
-    line = chain
-      ? `Focus line: ${chain.map((c) => c.join(" → ")).join("  •  ")}`
-      : `Focus line: ${person ? person.name : "?"} — top of chain, no manager.`;
+    const who = person ? person.name : "?";
+    if (simResult && (simResult.overlay_steps || []).length) {
+      // Real routing answer for this person in this case.
+      const steps = simResult.overlay_steps;
+      line = `${who} → ` + steps.map((s) => `${s.approver} [${s.source}]`).join(" → ");
+      if (approversEl) {
+        approversEl.classList.remove("hidden");
+        steps.forEach((s) => {
+          const li = document.createElement("li");
+          li.textContent = `${s.approver} — ${s.source}` +
+            (s.alternate_approvers && s.alternate_approvers.length
+              ? ` (or ${s.alternate_approvers.join(", ")})`
+              : "");
+          approversEl.appendChild(li);
+        });
+      }
+      line = `Approver line for ${line}`;
+    } else if (simResult && simResult.overlay_error) {
+      line = `Approver line: ${simResult.overlay_error}`;
+    } else {
+      const chain = thirtyCasesFocusChain(users, thirtyCasesFocusOverride);
+      line = chain
+        ? `Resolving approvers for ${who}…  Reporting line: ${chain.map((c) => c.join(" → ")).join("  •  ")}`
+        : `${who} — top of chain, no manager.`;
+    }
   } else {
     const users = thirtyCasesUsers();
     const chain = thirtyCasesTargetChain(users, tc);
@@ -2281,8 +2321,48 @@ function selectThirtyCase(id) {
   thirtyCasesSelected = id;
   // Reset any manual focus override so the case's hardcoded target shows first.
   thirtyCasesFocusOverride = null;
+  thirtyCasesSimChain = null;
   updateThirtyCasesDetail();
   renderThirtyCasesDiagram();
+}
+
+// Action used when simulating a clicked person's real approval line. Cases may
+// nominate an action; otherwise leave (annual_leave) is the representative flow.
+function thirtyCasesAction(testCase) {
+  return (testCase && testCase.action) || "annual_leave";
+}
+
+// Run the real routing engine for the clicked person under the selected case's
+// action, then bold and list the resolved approver line. Uses the rolled-back
+// /api/simulate-reporting-line endpoint, so nothing is persisted.
+async function runThirtyCasesSimulation(userId) {
+  const tc = THIRTY_CASES.find((c) => c.id === thirtyCasesSelected);
+  try {
+    const resp = await fetch("/api/simulate-reporting-line", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        requester_id: Number(userId),
+        edges: [],
+        action_code: thirtyCasesAction(tc),
+      }),
+    });
+    const result = await resp.json();
+    // Ignore stale responses if the user moved on to another person/case.
+    if (thirtyCasesFocusOverride !== userId) return;
+    const steps = result.overlay_steps || [];
+    const person = thirtyCasesUsers().find((u) => u.id === userId);
+    if (person && steps.length) {
+      thirtyCasesSimChain = [[person.name, ...steps.map((s) => s.approver)]];
+    } else {
+      thirtyCasesSimChain = null;
+    }
+    renderThirtyCasesDiagram();
+    updateThirtyCasesDetail(result);
+  } catch (err) {
+    thirtyCasesSimChain = null;
+    renderThirtyCasesDiagram();
+  }
 }
 
 // ---------------------------------------------------------------------------
