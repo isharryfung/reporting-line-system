@@ -48,6 +48,8 @@ def _build_team(
     from the most senior level (the team-lead level) down to the most junior.
     Each junior user reports, round-robin, to a user at the nearest more-senior
     level present in the team; the team-lead reports to the department head.
+    Layer 4 staff (rank 8+) always report to a Layer 3 manager (rank 5-7),
+    never to another Layer 4 member.
     """
     rank_order = [rank for rank, _ in composition]
     lead_rank = rank_order[0]
@@ -88,6 +90,10 @@ def _build_team(
 
         senior_members: list[User] = []
         for senior_rank in reversed(rank_order[:pos]):
+            # Layer 4 staff (rank 8+) report up to a Layer 3 manager (5-7),
+            # never to another Layer 4 member.
+            if rank >= 8 and senior_rank >= 8:
+                continue
             if by_rank.get(senior_rank):
                 senior_members = by_rank[senior_rank]
                 break

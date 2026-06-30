@@ -238,6 +238,13 @@
           </div>
           <div class="thirty-cases-workspace">
             <aside class="thirty-cases-list">
+              <label class="thirty-cases-filter">
+                Category
+                <select id="thirty-cases-filter">
+                  <option value="">All categories</option>
+                </select>
+              </label>
+              <p class="hint thirty-cases-focus-hint">Click a case to see its default answer; click a person to simulate who actually approves for them in this case.</p>
               <ul id="thirty-cases-cases"></ul>
             </aside>
             <div class="thirty-cases-diagram">
@@ -250,6 +257,7 @@
                   Pick a case on the left to bold its target reporting line.
                 </p>
                 <p id="thirty-cases-method" class="hint"></p>
+                <ol id="thirty-cases-approvers" class="hidden"></ol>
               </div>
             </div>
           </div>

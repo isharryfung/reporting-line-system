@@ -2028,6 +2028,9 @@ function renderTestCaseOverlayResult(result) {
 // department head) is the "target reporting line" bolded when the case is
 // selected. Focus users are picked by name where the seed data is
 // deterministic, falling back to the deepest member of the named department.
+// The bolded line is always derived live from the org chart (so it matches the
+// real chain shown by clicking a node); `target: []` flags inactive cases with
+// no workflow, while any other `target` value is illustrative only.
 const THIRTY_CASES = [
   { id: 1, category: "Acting & Coverage", title: "Skip-level Acting", focus: "Boris", focusDept: "ITSO", scenario: "A senior leader leaves and a junior employee acts for the whole department.", method: "Add an Acting record and assign the junior to the Acting Senior Leader job position; authority is inherited from that position.", target: [["Boris", "Ivan"]] },
   { id: 2, category: "Acting & Coverage", title: "Peer Coverage", focus: "Cara", focusDept: "ITSO", scenario: "Team A's manager is on leave; Team B's manager temporarily covers Team A.", method: "Give Team B's manager a second assignment to Acting Team A Head, covering two reporting lines.", target: [["Cara", "Ivan"]] },
@@ -2066,6 +2069,14 @@ const THIRTY_CASES = [
 
 let thirtyCasesReady = false;
 let thirtyCasesSelected = null;
+let thirtyCasesCategory = "";
+// When the user clicks a Focus person, store their id here so the
+// diagram bolds that person's resolved reporting line instead of the case's
+// hardcoded target. null = use the case default. Non-persistent (no DB writes).
+let thirtyCasesFocusOverride = null;
+// Resolved approval line (real routing simulation) for the clicked focus person
+// under the selected case's action; null until a person is clicked. Not persisted.
+let thirtyCasesSimChain = null;
 
 function thirtyCasesUsers() {
   const users = [];
@@ -2088,6 +2099,24 @@ function thirtyCasesFocusId(users, testCase) {
   return deepest ? deepest.id : null;
 }
 
+// Build a name-chain for a chosen Focus user by walking `manager_name` upward
+// to the top of the chart (dept head / School). Returns a single chain wrapped
+// in a list so it matches the shape `highlightTargetLine` consumes, e.g.
+// [["Boris","Ivan","School"]]. A lone person (no manager) yields no chain.
+function thirtyCasesFocusChain(users, userId) {
+  const start = users.find((u) => u.id === userId);
+  if (!start) return null;
+  const names = [start.name];
+  const seen = new Set([start.name]);
+  let current = start;
+  while (current && current.manager_name && !seen.has(current.manager_name)) {
+    names.push(current.manager_name);
+    seen.add(current.manager_name);
+    current = users.find((u) => u.name === current.manager_name);
+  }
+  return names.length > 1 ? [names] : null;
+}
+
 function initThirtyCases() {
   const list = document.getElementById("thirty-cases-cases");
   if (!list) return;
@@ -2095,6 +2124,7 @@ function initThirtyCases() {
     list.replaceChildren(
       ...THIRTY_CASES.map((tc) => {
         const li = document.createElement("li");
+        li.dataset.category = tc.category;
         const label = document.createElement("label");
         label.className = "thirty-case-row";
         const input = document.createElement("input");
@@ -2109,9 +2139,35 @@ function initThirtyCases() {
         return li;
       })
     );
+    const filter = document.getElementById("thirty-cases-filter");
+    if (filter) {
+      const categories = [...new Set(THIRTY_CASES.map((tc) => tc.category))];
+      filter.append(
+        ...categories.map((cat) => {
+          const opt = document.createElement("option");
+          opt.value = cat;
+          opt.textContent = cat;
+          return opt;
+        })
+      );
+      filter.addEventListener("change", () => {
+        thirtyCasesCategory = filter.value;
+        applyThirtyCasesFilter();
+      });
+    }
     thirtyCasesReady = true;
   }
   renderThirtyCasesDiagram();
+}
+
+// Show only cases whose category matches the selected filter (empty = all).
+function applyThirtyCasesFilter() {
+  const list = document.getElementById("thirty-cases-cases");
+  if (!list) return;
+  list.querySelectorAll("li").forEach((li) => {
+    const match = !thirtyCasesCategory || li.dataset.category === thirtyCasesCategory;
+    li.hidden = !match;
+  });
 }
 
 function renderThirtyCasesDiagram() {
@@ -2119,10 +2175,96 @@ function renderThirtyCasesDiagram() {
   if (!svg) return;
   const users = thirtyCasesUsers();
   const tc = THIRTY_CASES.find((c) => c.id === thirtyCasesSelected);
-  drawDiagram(svg, users, { deptTag: true });
-  // Bold each case's scenario-specific target reporting line (override, acting,
-  // fallback, etc.) rather than the plain solid-line chain to the dept head.
-  highlightTargetLine(svg, users, tc ? tc.target : null);
+  drawDiagram(svg, users, {
+    deptTag: true,
+    selectedId: thirtyCasesFocusOverride,
+    onNodeClick: (u) => {
+      // Toggle focus on/off: clicking the focused person clears back to default.
+      if (thirtyCasesFocusOverride === u.id) {
+        thirtyCasesFocusOverride = null;
+        thirtyCasesSimChain = null;
+        renderThirtyCasesDiagram();
+        updateThirtyCasesDetail();
+      } else {
+        thirtyCasesFocusOverride = u.id;
+        thirtyCasesSimChain = null;
+        renderThirtyCasesDiagram();
+        updateThirtyCasesDetail();
+        // Run the real routing engine for this person under the case's action,
+        // then re-render so the resolved approver line is bolded.
+        runThirtyCasesSimulation(u.id);
+      }
+    },
+  });
+  // When a person is clicked, bold their real routing-resolved approval line once
+  // the simulation returns; before that (and by default) bold the case target.
+  const chains = thirtyCasesFocusOverride != null
+    ? (thirtyCasesSimChain || thirtyCasesFocusChain(users, thirtyCasesFocusOverride))
+    : thirtyCasesTargetChain(users, tc);
+  highlightTargetLine(svg, users, chains);
+}
+
+// Resolve a case's default target line from the live org chart. Cases whose
+// target is an empty list are intentionally inactive (no workflow), so they
+// stay unbolded; every other case bolds the focus member's real reporting
+// chain — the same logic used when a node is clicked.
+function thirtyCasesTargetChain(users, testCase) {
+  if (!testCase || (testCase.target && testCase.target.length === 0)) return null;
+  // Bold each case's explicit, scenario-specific target line(s) so overlay,
+  // override, skip-level and co-head cases highlight the documented approver
+  // chain rather than the focus member's plain primary line.
+  if (testCase.target && testCase.target.length) return testCase.target;
+  return thirtyCasesFocusChain(users, thirtyCasesFocusId(users, testCase));
+}
+
+// Update the detail panel text to reflect the case default or chosen focus line.
+function updateThirtyCasesDetail(simResult) {
+  const tc = THIRTY_CASES.find((c) => c.id === thirtyCasesSelected);
+  if (!tc) return;
+  document.getElementById("thirty-cases-title").textContent = `${tc.id}. ${tc.title} — ${tc.category}`;
+  document.getElementById("thirty-cases-scenario").textContent = tc.scenario;
+  const approversEl = document.getElementById("thirty-cases-approvers");
+  if (approversEl) {
+    approversEl.replaceChildren();
+    approversEl.classList.add("hidden");
+  }
+  let line;
+  if (thirtyCasesFocusOverride != null) {
+    const users = thirtyCasesUsers();
+    const person = users.find((u) => u.id === thirtyCasesFocusOverride);
+    const who = person ? person.name : "?";
+    if (simResult && (simResult.overlay_steps || []).length) {
+      // Real routing answer for this person in this case.
+      const steps = simResult.overlay_steps;
+      line = `Approver line for ${who} → ` +
+        steps.map((s) => `${s.approver} [${s.source}]`).join(" → ");
+      if (approversEl) {
+        approversEl.classList.remove("hidden");
+        steps.forEach((s) => {
+          const li = document.createElement("li");
+          li.textContent = `${s.approver} — ${s.source}` +
+            (s.alternate_approvers && s.alternate_approvers.length
+              ? ` (or ${s.alternate_approvers.join(", ")})`
+              : "");
+          approversEl.appendChild(li);
+        });
+      }
+    } else if (simResult && simResult.overlay_error) {
+      line = `Approver line: ${simResult.overlay_error}`;
+    } else {
+      const chain = thirtyCasesFocusChain(users, thirtyCasesFocusOverride);
+      line = chain
+        ? `Resolving approvers for ${who}…  Reporting line: ${chain.map((c) => c.join(" → ")).join("  •  ")}`
+        : `${who} — top of chain, no manager.`;
+    }
+  } else {
+    const users = thirtyCasesUsers();
+    const chain = thirtyCasesTargetChain(users, tc);
+    line = chain
+      ? "Target line: " + chain.map((c) => c.join(" → ")).join("  •  ")
+      : "Target line: none — assignment inactive, workflow suspended.";
+  }
+  document.getElementById("thirty-cases-method").textContent = `${tc.method}  —  ${line}`;
 }
 
 // Bold the scenario-specific target reporting line(s) for a 30-case scenario.
@@ -2177,14 +2319,50 @@ function highlightTargetLine(svg, users, chains) {
 
 function selectThirtyCase(id) {
   thirtyCasesSelected = id;
-  const tc = THIRTY_CASES.find((c) => c.id === id);
-  document.getElementById("thirty-cases-title").textContent = `${tc.id}. ${tc.title} — ${tc.category}`;
-  document.getElementById("thirty-cases-scenario").textContent = tc.scenario;
-  const target = (tc.target && tc.target.length)
-    ? "Target line: " + tc.target.map((c) => c.join(" → ")).join("  •  ")
-    : "Target line: none — assignment inactive, workflow suspended.";
-  document.getElementById("thirty-cases-method").textContent = `${tc.method}  —  ${target}`;
+  // Reset any manual focus override so the case's hardcoded target shows first.
+  thirtyCasesFocusOverride = null;
+  thirtyCasesSimChain = null;
+  updateThirtyCasesDetail();
   renderThirtyCasesDiagram();
+}
+
+// Action used when simulating a clicked person's real approval line. Cases may
+// nominate an action; otherwise leave (annual_leave) is the representative flow.
+function thirtyCasesAction(testCase) {
+  return (testCase && testCase.action) || "annual_leave";
+}
+
+// Run the real routing engine for the clicked person under the selected case's
+// action, then bold and list the resolved approver line. Uses the rolled-back
+// /api/simulate-reporting-line endpoint, so nothing is persisted.
+async function runThirtyCasesSimulation(userId) {
+  const tc = THIRTY_CASES.find((c) => c.id === thirtyCasesSelected);
+  try {
+    const resp = await fetch("/api/simulate-reporting-line", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        requester_id: Number(userId),
+        edges: [],
+        action_code: thirtyCasesAction(tc),
+      }),
+    });
+    const result = await resp.json();
+    // Ignore stale responses if the user moved on to another person/case.
+    if (thirtyCasesFocusOverride !== userId) return;
+    const steps = result.overlay_steps || [];
+    const person = thirtyCasesUsers().find((u) => u.id === userId);
+    if (person && steps.length) {
+      thirtyCasesSimChain = [[person.name, ...steps.map((s) => s.approver)]];
+    } else {
+      thirtyCasesSimChain = null;
+    }
+    renderThirtyCasesDiagram();
+    updateThirtyCasesDetail(result);
+  } catch (err) {
+    thirtyCasesSimChain = null;
+    renderThirtyCasesDiagram();
+  }
 }
 
 // ---------------------------------------------------------------------------
