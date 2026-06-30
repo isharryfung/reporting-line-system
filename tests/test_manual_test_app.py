@@ -599,7 +599,13 @@ def test_simulate_overlay_resolves_action_code_scope():
     assert leave["overlay_steps"][0]["approver"] == "Cyrus"
 
 
-def test_simulate_overlay_rejects_unknown_action_code():
+def test_simulate_overlay_ignores_irrelevant_action_scoped_overlay():
+    """An overlay scoped to a different action than the one being simulated is
+    irrelevant to that action's routing and must not abort the approver line.
+
+    This guards Case #3 (Partial Acting): simulating ``annual_leave`` ships a
+    performance-review-scoped coverage overlay too, and that overlay must never
+    break the leave line even if its action cannot be resolved."""
     ids = _user_ids()
     result = simulate_reporting_line(
         requester_id=ids["Cleo"],
@@ -610,9 +616,30 @@ def test_simulate_overlay_rejects_unknown_action_code():
                 "type": "peer_coverage",
                 "owner_id": ids["Cyrus"],
                 "substitute_id": ids["Isaac"],
+                "action_code": "annual_leave",
+            },
+            {
+                "type": "peer_coverage",
+                "owner_id": ids["Cyrus"],
+                "substitute_id": ids["Evan"],
                 "action_code": "does_not_exist",
-            }
+            },
         ],
+    )
+    # The irrelevant (and here unresolvable) overlay is skipped, so the leave
+    # line still resolves through the leave cover instead of erroring out.
+    assert "overlay_error" not in result
+    assert result["overlay_steps"][0]["approver"] == "Isaac"
+
+
+def test_simulate_overlay_rejects_unknown_simulated_action_code():
+    """Simulating an action that does not exist still returns an overlay_error."""
+    ids = _user_ids()
+    result = simulate_reporting_line(
+        requester_id=ids["Cleo"],
+        edges=[],
+        action_code="does_not_exist",
+        overlays=[],
     )
     assert result["overlay_error"] == "Action 'does_not_exist' not found."
 

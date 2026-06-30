@@ -1829,6 +1829,27 @@ def simulate_reporting_line(
         session.close()
 
 
+def _overlay_applies_to_action(overlay: dict[str, Any], action: Action) -> bool:
+    """Return True if ``overlay`` can affect routing for ``action``.
+
+    An overlay may be scoped to a specific action by ``action_code`` or numeric
+    ``action_id``. The routing engine only applies an action-scoped overlay to
+    its own action, so an overlay scoped to a *different* action is irrelevant to
+    this simulation and is skipped (avoiding a needless, possibly failing, action
+    lookup when building it). Overlays with no action scope apply to every action.
+    """
+    code = overlay.get("action_code")
+    if code not in (None, ""):
+        return str(code) == action.code
+    action_id = overlay.get("action_id")
+    if action_id not in (None, ""):
+        try:
+            return int(action_id) == action.id
+        except (TypeError, ValueError):
+            return False
+    return True
+
+
 def _resolve_overlay_chain(
     session: Session,
     requester: User,
@@ -1843,6 +1864,14 @@ def _resolve_overlay_chain(
     runs :func:`build_approval_chain`, and returns the resolved approver steps
     with per-step ``source`` labels plus plain-language wording. Any failure is
     returned as ``overlay_error`` so the base reporting line still displays.
+
+    Only overlays relevant to the simulated action are built. The routing engine
+    filters overlays by action scope (an overlay scoped to action A never affects
+    action B's routing), so action-scoped overlays for a *different* action are
+    skipped here. This keeps action-decoupled cases such as Case #3 (Partial
+    Acting, where leave and performance-review covers are separate overlays) from
+    aborting the leave approver line just because a performance-review-scoped
+    overlay is in the payload.
     """
     action = session.query(Action).filter(Action.code == action_code).first()
     if action is None:
@@ -1850,6 +1879,8 @@ def _resolve_overlay_chain(
 
     try:
         for overlay in overlays:
+            if not _overlay_applies_to_action(overlay, action):
+                continue
             session.add(_build_overlay_object(overlay, requester, session))
         session.flush()
 
