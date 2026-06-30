@@ -2050,7 +2050,7 @@ const THIRTY_CASES = [
   { id: 4, category: "Acting & Coverage", title: "Dummy Head", focus: "Hannah", focusDept: "HRO", scenario: "A new department lacks a head, so a neighboring head is temporarily assigned.", method: "Assign the neighboring department head to the new department's Head job position.", target: [["Hannah", "Ivan"]] },
   { id: 5, category: "Acting & Coverage", title: "Self-Approval", focus: "Ingrid", focusDept: "ITSO", scenario: "A manager acting in their own supervisor's role routes their leave back to themselves.", method: "Safeguard: if Submitter == Approver, roll up to next level or route to HR.", target: [["Ingrid", "Ivan"]] },
   { id: 6, category: "Acting & Coverage", title: "Handover Overlap", focus: "Isaac", focusDept: "ITSO", scenario: "Old and new managers occupy the same Head position during a 2-week overlap.", method: "Support over-hiring; HR specifies who holds approval authority during transition.", target: [["Isaac", "Ingrid", "Ivan"]] },
-  { id: 7, category: "Matrix & Dual Reporting", title: "Cross-Department Project", focus: "Boris", focusDept: "ITSO", scenario: "An IT employee (Boris) is seconded 100% to HR for a six-month project, so his leave is approved by his HR project manager (Hazel) then her own manager (Harvey).", method: "Keep IT job position for payroll; add Override_Reports_To to an HR manager so leave routes to the chosen primary approver (Hazel) then her manager as second level (Harvey).", action: "annual_leave", override: { employee: "Boris", primaryApprover: "Hazel", targetDept: "HRO" } },
+  { id: 7, category: "Matrix & Dual Reporting", title: "Cross-Department Project", focus: "Boris", focusDept: "ITSO", scenario: "An IT employee (Boris) is seconded 100% to HR for a six-month project, so their leave is approved by their HR project manager (Hazel) then her own manager (Harvey).", method: "Keep IT job position for payroll; add Override_Reports_To to an HR manager so leave routes to the chosen primary approver (Hazel) then her manager as second level (Harvey).", action: "annual_leave", override: { employee: "Boris", primaryApprover: "Hazel", targetDept: "HRO" } },
   { id: 8, category: "Matrix & Dual Reporting", title: "Split Allocation", focus: "Bruno", focusDept: "ITSO", scenario: "A professor spends 50% in two schools.", method: "Create two job assignments and define which is the main approval line.", target: [["Bruno", "Ingrid", "Ivan"]] },
   { id: 9, category: "Matrix & Dual Reporting", title: "Co-Heads", focus: "Cara", focusDept: "ITSO", scenario: "A team has two equal Co-Directors.", method: "Link the Org Unit to multiple Co-Head positions; workflow is Any-One-Approve.", target: [["Cara", "Ivan"], ["Cara", "Ingrid"]] },
   { id: 10, category: "Matrix & Dual Reporting", title: "Executive Assistant Delegation", focus: "Ivan", focusDept: "ITSO", scenario: "An executive never logs in; their EA handles all approvals.", method: "Delegation module: executive delegates authority to the EA; audit log records on-behalf-of.", target: [["Isaac", "Ivan"]] },
@@ -2725,7 +2725,7 @@ function thirtyCasesOverrideSelection(users, testCase) {
 
 // Build the reporting-line edge that overrides the seconded employee's primary
 // manager to the chosen primary approver, so the simulation routes leave through
-// that manager (and her own manager as the emergent second level).
+// that manager (and their own manager as the emergent second level).
 function thirtyCasesOverrideEdges(testCase) {
   const spec = thirtyCasesOverrideSpec(testCase);
   if (!spec) return [];
