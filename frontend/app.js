@@ -1663,10 +1663,16 @@ async function runScenarioLab(event) {
     return;
   }
   const primary = result.primary_approver
-    ? `${escHtml(result.primary_approver)} <span class="lab-source">(${escHtml(result.primary_source || "")})</span>`
+    ? `${escHtml(result.primary_approver)} <span class="lab-source">(${escHtml(result.primary_source || "")})</span>` +
+      (result.primary_acting_approver
+        ? ` <span class="lab-source">(${escHtml(result.primary_acting_approver)} acting)</span>`
+        : "")
     : "— none —";
   const second = result.second_level_approver
-    ? `${escHtml(result.second_level_approver)} <span class="lab-source">(${escHtml(result.second_level_source || "")})</span>`
+    ? `${escHtml(result.second_level_approver)} <span class="lab-source">(${escHtml(result.second_level_source || "")})</span>` +
+      (result.second_level_acting_approver
+        ? ` <span class="lab-source">(${escHtml(result.second_level_acting_approver)} acting)</span>`
+        : "")
     : "— none —";
   summaryEl.innerHTML = `
     <div class="lab-line"><span class="lab-label">Primary level:</span> ${primary}</div>
@@ -2011,6 +2017,12 @@ function renderTestCaseOverlayResult(result) {
     tag.className = "overlay-source-tag";
     tag.textContent = step.source;
     li.append(document.createTextNode(`${step.approver} `), tag);
+    if (step.acting_approver) {
+      const actingTag = document.createElement("span");
+      actingTag.className = "overlay-source-tag";
+      actingTag.textContent = `${step.acting_approver} acting`;
+      li.append(document.createTextNode(" "), actingTag);
+    }
     if (step.alternate_approvers && step.alternate_approvers.length) {
       li.append(
         document.createTextNode(` (or ${step.alternate_approvers.join(", ")})`)
@@ -2238,12 +2250,19 @@ function updateThirtyCasesDetail(simResult) {
       // Real routing answer for this person in this case.
       const steps = simResult.overlay_steps;
       line = `Approver line for ${who} → ` +
-        steps.map((s) => `${s.approver} [${s.source}]`).join(" → ");
+        steps
+          .map(
+            (s) =>
+              `${s.approver} [${s.source}]` +
+              (s.acting_approver ? ` (${s.acting_approver} acting)` : "")
+          )
+          .join(" → ");
       if (approversEl) {
         approversEl.classList.remove("hidden");
         steps.forEach((s) => {
           const li = document.createElement("li");
           li.textContent = `${s.approver} — ${s.source}` +
+            (s.acting_approver ? ` (${s.acting_approver} acting)` : "") +
             (s.alternate_approvers && s.alternate_approvers.length
               ? ` (or ${s.alternate_approvers.join(", ")})`
               : "");

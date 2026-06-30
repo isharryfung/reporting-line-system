@@ -351,7 +351,7 @@ def test_simulate_overlay_delegation_resolves_primary_and_second_level():
     assert result["second_level_approver"] == "Fiona"
 
 
-def test_simulate_overlay_acting_replaces_primary_approver():
+def test_simulate_overlay_acting_annotates_primary_approver():
     ids = _user_ids()
     result = simulate_scenario_overlay(
         requester_id=ids["Peter"],
@@ -361,8 +361,10 @@ def test_simulate_overlay_acting_replaces_primary_approver():
         ],
     )
     assert result["status"] == "success"
-    assert result["primary_approver"] == "Nina"
-    assert result["primary_source"] == "acting"
+    # Acting is additive: Mary stays the official approver, Nina acts for her.
+    assert result["primary_approver"] == "Mary"
+    assert result["primary_source"] == "official"
+    assert result["primary_acting_approver"] == "Nina"
 
 
 def test_simulate_overlay_handover_both_required_keeps_both_approvers():
@@ -508,8 +510,10 @@ def test_simulate_reporting_line_acting_overlay_changes_resolved_approver():
     )
     assert result["status"] == "success"
     assert result["action_name"] == "Sick Leave"
-    assert result["overlay_steps"][0]["approver"] == "Nina"
-    assert result["overlay_steps"][0]["source"] == "acting"
+    # Acting is additive: Mary remains the official approver, Nina acts for her.
+    assert result["overlay_steps"][0]["approver"] == "Mary"
+    assert result["overlay_steps"][0]["source"] == "official"
+    assert result["overlay_steps"][0]["acting_approver"] == "Nina"
     assert "Nina" in result["overlay_wording"]
 
 

@@ -124,14 +124,17 @@ def test_team_lead_cannot_edit_themselves(db_session, seed):
 
 
 def test_acting_replaces_approver_during_valid_date_range(db_session, seed):
+    # Acting is additive: Mary stays the official approver while Nina is
+    # recorded as acting on her behalf (Nina [acting] annotated on Mary).
     chain = build_approval_chain(
         db_session,
         seed["peter"].id,
         "sick_leave",
         request_at=dt(2027, 6, 15),
     )
-    assert [step.approver.id for step in chain.steps] == [seed["nina"].id]
-    assert chain.steps[0].source == "acting"
+    assert [step.approver.id for step in chain.steps] == [seed["mary"].id]
+    assert chain.steps[0].source == "official"
+    assert chain.steps[0].acting_approver.id == seed["nina"].id
 
 
 def test_acting_ignored_outside_date_range(db_session, seed):
@@ -145,9 +148,10 @@ def test_acting_ignored_outside_date_range(db_session, seed):
 
 
 def test_position_level_acting_cascades_to_all_second_level_dependents(db_session, seed):
-    # Case #1: one acting overlay (Ivan -> Boris) replaces Ivan as the
+    # Case #1: one acting overlay (Ivan -> Boris) annotates Ivan as the
     # second-level approver for every dependent who rolls up to him, without
-    # any per-employee reporting-line edits.
+    # any per-employee reporting-line edits. Acting is additive: Ivan stays the
+    # official authority owner and Boris is recorded as acting on his behalf.
     for requester_key in ("itso_isaac", "itso_cyrus", "itso_evan"):
         chain = build_approval_chain(
             db_session,
@@ -156,8 +160,27 @@ def test_position_level_acting_cascades_to_all_second_level_dependents(db_sessio
             request_at=dt(2027, 7, 15),
         )
         second_level = chain.steps[1]
-        assert second_level.approver.id == seed["itso_boris"].id
-        assert second_level.source == "acting"
+        assert second_level.approver.id == seed["itso_ivan"].id
+        assert second_level.source == "official"
+        assert second_level.acting_approver.id == seed["itso_boris"].id
+
+
+def test_position_level_acting_keeps_official_owner_for_isaac(db_session, seed):
+    # Case #1 focused check: Isaac's approver line on the case date reads
+    # Ingrid [official] -> Ivan [official] (Boris acting).
+    chain = build_approval_chain(
+        db_session,
+        seed["itso_isaac"].id,
+        "annual_leave",
+        request_at=dt(2027, 7, 15),
+    )
+    assert [step.approver.id for step in chain.steps] == [
+        seed["itso_ingrid"].id,
+        seed["itso_ivan"].id,
+    ]
+    assert [step.source for step in chain.steps] == ["official", "official"]
+    assert chain.steps[0].acting_approver is None
+    assert chain.steps[1].acting_approver.id == seed["itso_boris"].id
 
 
 def test_position_level_acting_leaves_default_chain_unchanged_off_date(db_session, seed):

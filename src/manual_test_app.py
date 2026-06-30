@@ -1589,8 +1589,14 @@ def simulate_scenario_overlay(
                 "project_code": project_code,
                 "primary_approver": steps[0]["approver"] if len(steps) >= 1 else None,
                 "primary_source": steps[0]["source"] if len(steps) >= 1 else None,
+                "primary_acting_approver": (
+                    steps[0].get("acting_approver") if len(steps) >= 1 else None
+                ),
                 "second_level_approver": steps[1]["approver"] if len(steps) >= 2 else None,
                 "second_level_source": steps[1]["source"] if len(steps) >= 2 else None,
+                "second_level_acting_approver": (
+                    steps[1].get("acting_approver") if len(steps) >= 2 else None
+                ),
             }
         )
         return response
@@ -1845,14 +1851,29 @@ def _overlay_chain_wording(
             f"have no one to approve it."
         )
 
-    sentences = [
-        f"For {action.name}, {requester.name}'s request is approved by "
-        f"{steps[0]['approver']} (via {steps[0]['source']})."
-    ]
-    for step in steps[1:]:
-        sentences.append(
-            f"It then escalates to {step['approver']} (via {step['source']})."
+    first = steps[0]
+    if first.get("acting_approver"):
+        opening = (
+            f"For {action.name}, {requester.name}'s request is approved by "
+            f"{first['approver']} (via {first['source']}), with "
+            f"{first['acting_approver']} acting on their behalf."
         )
+    else:
+        opening = (
+            f"For {action.name}, {requester.name}'s request is approved by "
+            f"{first['approver']} (via {first['source']})."
+        )
+    sentences = [opening]
+    for step in steps[1:]:
+        if step.get("acting_approver"):
+            sentences.append(
+                f"It then escalates to {step['approver']} (via {step['source']}), "
+                f"with {step['acting_approver']} acting on their behalf."
+            )
+        else:
+            sentences.append(
+                f"It then escalates to {step['approver']} (via {step['source']})."
+            )
     for step in steps:
         if step.get("alternate_approvers"):
             alternates = ", ".join(step["alternate_approvers"])

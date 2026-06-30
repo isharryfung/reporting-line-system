@@ -353,6 +353,7 @@ def _seed_itso_hro_departments(
         "itso_ivan": itso_head,
         "itso_boris": boris,
         "itso_isaac": itso_by_name["Isaac"],
+        "itso_ingrid": itso_by_name["Ingrid"],
         "itso_cyrus": itso_by_name["Cyrus"],
         "itso_evan": itso_by_name["Evan"],
         "itso_infra": itso_infra,
