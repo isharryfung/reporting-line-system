@@ -744,5 +744,5 @@ def test_stale_persisted_db_missing_acting_overlay_is_reseeded(tmp_path, monkeyp
         .count()
     )
     session.close()
-    assert itso_acting > 0
+    assert itso_acting == 1
 
