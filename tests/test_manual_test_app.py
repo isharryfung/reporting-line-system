@@ -702,3 +702,47 @@ def test_stale_persisted_db_with_old_itso_hro_ranks_is_reseeded(tmp_path, monkey
         if level["dept_name"] == "Information Technology Services Office"
     }
     assert app._EXPECTED_DEPT_LEVEL_RANKS["ITSO"].issubset(itso_ranks)
+
+
+def test_stale_persisted_db_missing_acting_overlay_is_reseeded(tmp_path, monkeypatch):
+    """A persisted DB seeded before the Case #1 skip-level acting overlay existed
+    has the right departments and ranks but no ITSO acting assignment, so it must
+    be re-seeded; otherwise Ivan's dependents (e.g. Isaac) never show the acting
+    cascade."""
+    import src.manual_test_app as app
+    from src.database import create_engine_sqlite, init_db
+    from sqlalchemy.orm import sessionmaker
+    from src.models import ActingAssignment, Department
+    from src.sample_data import seed_sample_data
+
+    db_path = tmp_path / "stale_acting.db"
+
+    # Build a fully-seeded database, then drop the acting assignments to mimic an
+    # older build that never seeded the Case #1 skip-level acting overlay.
+    engine = create_engine_sqlite(str(db_path))
+    init_db(engine)
+    session = sessionmaker(bind=engine)()
+    seed_sample_data(session)
+    session.query(ActingAssignment).delete()
+    session.commit()
+    assert app._seed_is_complete(session) is False
+    session.close()
+    engine.dispose()
+
+    # Point the app at the stale database and force a fresh engine load.
+    monkeypatch.setattr(app, "_DB_PATH", str(db_path))
+    monkeypatch.setattr(app, "_engine", None)
+    monkeypatch.setattr(app, "_SessionFactory", None)
+
+    # Loading the app re-seeds, restoring the ITSO acting assignment.
+    app.build_bootstrap_payload()
+    session = app._get_session()
+    itso_acting = (
+        session.query(ActingAssignment)
+        .join(Department, ActingAssignment.dept_id == Department.id)
+        .filter(Department.code == "ITSO")
+        .count()
+    )
+    session.close()
+    assert itso_acting > 0
+
