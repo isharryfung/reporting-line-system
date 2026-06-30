@@ -2102,10 +2102,11 @@ let thirtyCasesPartialManagerId = null;
 let thirtyCasesPartialLeaveCoverId = null;
 let thirtyCasesPartialReviewCoverId = null;
 let thirtyCasesPartialMode = "leave";
-// For override / secondment cases (e.g. Case #7) the user can choose which
-// manager is the seconded employee's primary approver; the second level then
-// emerges from that manager's own reporting line. null = use case defaults.
-// Non-persistent.
+// For override / secondment cases (e.g. Case #7) the user can choose which IT
+// employee is seconded and which manager is their primary approver; the second
+// level then emerges from that manager's own reporting line. null = use case
+// defaults. Non-persistent.
+let thirtyCasesOverrideEmployeeId = null;
 let thirtyCasesOverridePrimaryId = null;
 
 function thirtyCasesUsers() {
@@ -2198,6 +2199,10 @@ function initThirtyCases() {
       const el = document.getElementById(id);
       if (el) el.addEventListener("change", onThirtyCasesPartialChange);
     });
+    const overrideEmployeeSel = document.getElementById("thirty-cases-override-employee");
+    if (overrideEmployeeSel) {
+      overrideEmployeeSel.addEventListener("change", onThirtyCasesOverrideChange);
+    }
     const overridePrimarySel = document.getElementById("thirty-cases-override-primary");
     if (overridePrimarySel) {
       overridePrimarySel.addEventListener("change", onThirtyCasesOverrideChange);
@@ -2401,6 +2406,7 @@ function selectThirtyCase(id) {
   thirtyCasesPartialMode = "leave";
   renderThirtyCasesPartialControls(THIRTY_CASES.find((c) => c.id === id));
   // Reset override / secondment choices back to the case's documented default.
+  thirtyCasesOverrideEmployeeId = null;
   thirtyCasesOverridePrimaryId = null;
   renderThirtyCasesOverrideControls(THIRTY_CASES.find((c) => c.id === id));
   updateThirtyCasesDetail();
@@ -2703,13 +2709,16 @@ function thirtyCasesOverrideSpec(testCase) {
 function thirtyCasesOverrideSelection(users, testCase) {
   const spec = thirtyCasesOverrideSpec(testCase);
   if (!spec) return null;
-  const employee = users.find((u) => u.name === spec.employee);
+  const defaultEmployee = users.find((u) => u.name === spec.employee);
   const defaultPrimary = users.find((u) => u.name === spec.primaryApprover);
+  const employeeId = thirtyCasesOverrideEmployeeId != null
+    ? thirtyCasesOverrideEmployeeId
+    : (defaultEmployee ? defaultEmployee.id : null);
   const primaryApproverId = thirtyCasesOverridePrimaryId != null
     ? thirtyCasesOverridePrimaryId
     : (defaultPrimary ? defaultPrimary.id : null);
   return {
-    employeeId: employee ? employee.id : null,
+    employeeId,
     primaryApproverId,
   };
 }
@@ -2742,19 +2751,40 @@ function thirtyCasesOverrideActiveChain(users, testCase) {
   return [chain];
 }
 
-// Populate and show the primary-approver selector for override cases, or hide it
-// for any other case. Candidates are the Layer 3 managers (level ranks 5-6) in
-// the case's target department, so the user picks who approves the secondment.
+// Populate and show the override-case selectors, or hide them for any other
+// case. The employee selector lists the seconded employee's home-department
+// staff (the case focus department, excluding the dept head). The primary
+// selector lists the Layer 3 managers (level ranks 5-6) in the target
+// department, so the user picks who approves the secondment.
 function renderThirtyCasesOverrideControls(testCase) {
   const wrap = document.getElementById("thirty-cases-override-controls");
+  const employeeSel = document.getElementById("thirty-cases-override-employee");
   const primarySel = document.getElementById("thirty-cases-override-primary");
-  if (!wrap || !primarySel) return;
+  if (!wrap || !employeeSel || !primarySel) return;
   const spec = thirtyCasesOverrideSpec(testCase);
   if (!spec) {
     wrap.classList.add("hidden");
     return;
   }
   const users = thirtyCasesUsers();
+  const sel = thirtyCasesOverrideSelection(users, testCase) || {};
+  // Source (home) department of the seconded employee — exclude the dept head
+  // (top rank 4) so only employees are selectable.
+  const sourceDept = testCase.focusDept || null;
+  const employees = users.filter(
+    (u) =>
+      (!sourceDept || u.department_code === sourceDept) && u.level_rank > 4
+  );
+  const employeeCandidates = employees.length ? employees : users;
+  employeeSel.replaceChildren(
+    ...employeeCandidates.map((u) => {
+      const opt = document.createElement("option");
+      opt.value = String(u.id);
+      opt.textContent = `${u.name} — ${u.department_code} / ${u.level_name}`;
+      if (u.id === sel.employeeId) opt.selected = true;
+      return opt;
+    })
+  );
   const dept = spec.targetDept || null;
   const managers = users.filter(
     (u) =>
@@ -2763,7 +2793,6 @@ function renderThirtyCasesOverrideControls(testCase) {
       u.level_rank <= 6
   );
   const candidates = managers.length ? managers : users;
-  const sel = thirtyCasesOverrideSelection(users, testCase) || {};
   primarySel.replaceChildren(
     ...candidates.map((u) => {
       const opt = document.createElement("option");
@@ -2776,10 +2805,13 @@ function renderThirtyCasesOverrideControls(testCase) {
   wrap.classList.remove("hidden");
 }
 
-// React to a change in the primary-approver selector: record the choice, re-bold
+// React to a change in either override selector: record the choices, re-bold
 // the default line, and re-run the simulation for any person currently clicked.
 function onThirtyCasesOverrideChange() {
+  const employeeSel = document.getElementById("thirty-cases-override-employee");
   const primarySel = document.getElementById("thirty-cases-override-primary");
+  thirtyCasesOverrideEmployeeId =
+    employeeSel && employeeSel.value ? Number(employeeSel.value) : null;
   thirtyCasesOverridePrimaryId =
     primarySel && primarySel.value ? Number(primarySel.value) : null;
   renderThirtyCasesDiagram();
