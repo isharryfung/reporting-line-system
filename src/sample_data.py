@@ -325,9 +325,37 @@ def _seed_itso_hro_departments(
     )
     session.flush()
 
+    # Case #1 (Skip-level Acting): a single position-level acting overlay where
+    # the junior programmer Boris acts for the ITSO Senior Leader (Ivan). The
+    # assignment is keyed on the principal (Ivan), so the routing engine
+    # cascades it to every approval chain where Ivan is an approver — i.e. all
+    # of his second-level dependents (Isaac, Cyrus, Evan, ...) — without editing
+    # any individual reporting line. It is date-scoped to July 2027 so the
+    # default chains keep showing Ivan and the cascade only appears on that date.
+    itso_by_name = {user.name: user for user in itso_users}
+    boris = itso_by_name["Boris"]
+    session.add(
+        ActingAssignment(
+            principal_user_id=itso_head.id,
+            acting_user_id=boris.id,
+            dept_id=itso.id,
+            org_unit_id=None,
+            action_id=None,
+            effective_from=_dt(2027, 7, 1),
+            effective_to=_dt(2027, 7, 31),
+        )
+    )
+    session.flush()
+
     return {
         "itso": itso,
         "hro": hro,
+        "itso_ivan": itso_head,
+        "itso_boris": boris,
+        "itso_isaac": itso_by_name["Isaac"],
+        "itso_ingrid": itso_by_name["Ingrid"],
+        "itso_cyrus": itso_by_name["Cyrus"],
+        "itso_evan": itso_by_name["Evan"],
         "itso_infra": itso_infra,
         "itso_apps": itso_apps,
         "itso_svc": itso_svc,

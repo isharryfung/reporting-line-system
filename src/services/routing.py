@@ -39,6 +39,19 @@ class ApprovalStepResult:
     explanation: str = ""
     alternate_approvers: list[str] = field(default_factory=list)
     authority_owner_id: int | None = None
+    acting_approver: User | None = None
+
+    @property
+    def effective_approver(self) -> User:
+        """The person actually exercising the authority for this step.
+
+        When an acting overlay is applied additively the official authority
+        owner (``approver``) stays on the step for display, but the acting
+        holder (``acting_approver``) is the one who actually approves. Routing
+        rules that care about *who clicks approve* (e.g. self-approval
+        prevention) should use this instead of ``approver``.
+        """
+        return self.acting_approver or self.approver
 
 
 @dataclass
@@ -60,6 +73,11 @@ def approval_chain_to_dict(chain: ApprovalChain) -> dict[str, object]:
                 "source": step.source,
                 "explanation": step.explanation,
                 "alternate_approvers": step.alternate_approvers,
+                "acting": step.acting_approver is not None,
+                "acting_approver": (
+                    step.acting_approver.name if step.acting_approver else None
+                ),
+                "authority_owner": step.approver.name,
             }
             for step in chain.steps
         ],
@@ -396,7 +414,19 @@ def _apply_person_overlay(
     owner_field: str,
     replacement_field: str,
     overlay_name: str,
+    additive: bool = False,
 ) -> list[ApprovalStepResult]:
+    """Apply a person-level overlay (acting / delegation / peer coverage).
+
+    By default the matched assignment *replaces* the official approver with the
+    substitute (the historical behaviour for delegation and peer coverage).
+
+    When ``additive`` is ``True`` (used for acting) the official authority owner
+    stays on the step as ``approver`` and the substitute is attached as
+    ``acting_approver`` instead, so the resolved line keeps showing the official
+    approver alongside the acting holder (e.g. ``Ivan [official] (Boris
+    acting)``) rather than silently swapping Ivan out for Boris.
+    """
     transformed: list[ApprovalStepResult] = []
     for step in steps:
         assignments = (
@@ -437,20 +467,36 @@ def _apply_person_overlay(
         if overlay_name == "delegation" and replacement.delegator_user_id == replacement.delegate_user_id:
             raise RoutingError("Self-delegation is not allowed.")
 
-        transformed.append(
-            ApprovalStepResult(
-                step_order=step.step_order,
-                approver=substitute,
-                is_fallback=step.is_fallback,
-                source=overlay_name,
-                explanation=(
-                    f"{overlay_name.replace('_', ' ').capitalize()} replaces "
-                    f"{step.approver.name} with {substitute.name}."
-                ),
-                alternate_approvers=step.alternate_approvers,
-                authority_owner_id=step.authority_owner_id,
+        if additive:
+            transformed.append(
+                ApprovalStepResult(
+                    step_order=step.step_order,
+                    approver=step.approver,
+                    is_fallback=step.is_fallback,
+                    source=step.source,
+                    explanation=(
+                        f"{substitute.name} is acting for {step.approver.name}."
+                    ),
+                    alternate_approvers=step.alternate_approvers,
+                    authority_owner_id=step.authority_owner_id,
+                    acting_approver=substitute,
+                )
             )
-        )
+        else:
+            transformed.append(
+                ApprovalStepResult(
+                    step_order=step.step_order,
+                    approver=substitute,
+                    is_fallback=step.is_fallback,
+                    source=overlay_name,
+                    explanation=(
+                        f"{overlay_name.replace('_', ' ').capitalize()} replaces "
+                        f"{step.approver.name} with {substitute.name}."
+                    ),
+                    alternate_approvers=step.alternate_approvers,
+                    authority_owner_id=step.authority_owner_id,
+                )
+            )
         _audit(
             session,
             entity_type="approval_chain",
@@ -708,7 +754,7 @@ def _prevent_self_approval(
 ) -> list[ApprovalStepResult]:
     resolved: list[ApprovalStepResult] = []
     for step in steps:
-        if step.approver.id != requester.id:
+        if step.effective_approver.id != requester.id:
             resolved.append(step)
             continue
         resolved.append(_redirect_self_approval(session, requester, step))
@@ -804,6 +850,7 @@ def build_approval_chain(
         "principal_user_id",
         "acting_user",
         "acting",
+        additive=True,
     )
     chain.steps = _apply_person_overlay(
         session,

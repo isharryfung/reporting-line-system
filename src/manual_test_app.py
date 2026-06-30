@@ -92,9 +92,11 @@ def _get_engine():
 def _seed_is_complete(session: Session) -> bool:
     """Return True if the persisted sample organisation is up to date.
 
-    Checks both that every expected sample department exists and that the
-    ITSO/HRO departments carry the current expected level ranks, so a database
-    seeded by an older build (e.g. with stale ITSO/HRO ranks) is re-seeded.
+    Checks that every expected sample department exists, that the ITSO/HRO
+    departments carry the current expected level ranks, and that the seeded
+    Case #1 (skip-level acting) overlay is present, so a database seeded by an
+    older build (e.g. with stale ITSO/HRO ranks, or from before the acting
+    overlay was seeded) is re-seeded.
     """
     existing = {code for (code,) in session.query(Department.code).all()}
     if not _EXPECTED_SEED_DEPARTMENTS.issubset(existing):
@@ -109,6 +111,18 @@ def _seed_is_complete(session: Session) -> bool:
         }
         if not expected_ranks.issubset(ranks):
             return False
+    # A database seeded before the Case #1 skip-level acting overlay was added
+    # has the right departments and ranks but no ITSO acting assignment, so the
+    # cascade onto Ivan's dependents (e.g. Isaac) never appears. Treat that as
+    # stale so it is re-seeded.
+    itso_acting = (
+        session.query(ActingAssignment.id)
+        .join(Department, ActingAssignment.dept_id == Department.id)
+        .filter(Department.code == "ITSO")
+        .first()
+    )
+    if itso_acting is None:
+        return False
     return True
 
 
@@ -1589,8 +1603,14 @@ def simulate_scenario_overlay(
                 "project_code": project_code,
                 "primary_approver": steps[0]["approver"] if len(steps) >= 1 else None,
                 "primary_source": steps[0]["source"] if len(steps) >= 1 else None,
+                "primary_acting_approver": (
+                    steps[0].get("acting_approver") if len(steps) >= 1 else None
+                ),
                 "second_level_approver": steps[1]["approver"] if len(steps) >= 2 else None,
                 "second_level_source": steps[1]["source"] if len(steps) >= 2 else None,
+                "second_level_acting_approver": (
+                    steps[1].get("acting_approver") if len(steps) >= 2 else None
+                ),
             }
         )
         return response
@@ -1845,14 +1865,29 @@ def _overlay_chain_wording(
             f"have no one to approve it."
         )
 
-    sentences = [
-        f"For {action.name}, {requester.name}'s request is approved by "
-        f"{steps[0]['approver']} (via {steps[0]['source']})."
-    ]
-    for step in steps[1:]:
-        sentences.append(
-            f"It then escalates to {step['approver']} (via {step['source']})."
+    first = steps[0]
+    if first.get("acting_approver"):
+        opening = (
+            f"For {action.name}, {requester.name}'s request is approved by "
+            f"{first['approver']} (via {first['source']}), with "
+            f"{first['acting_approver']} acting on their behalf."
         )
+    else:
+        opening = (
+            f"For {action.name}, {requester.name}'s request is approved by "
+            f"{first['approver']} (via {first['source']})."
+        )
+    sentences = [opening]
+    for step in steps[1:]:
+        if step.get("acting_approver"):
+            sentences.append(
+                f"It then escalates to {step['approver']} (via {step['source']}), "
+                f"with {step['acting_approver']} acting on their behalf."
+            )
+        else:
+            sentences.append(
+                f"It then escalates to {step['approver']} (via {step['source']})."
+            )
     for step in steps:
         if step.get("alternate_approvers"):
             alternates = ", ".join(step["alternate_approvers"])

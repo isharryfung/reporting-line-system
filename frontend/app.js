@@ -1663,10 +1663,16 @@ async function runScenarioLab(event) {
     return;
   }
   const primary = result.primary_approver
-    ? `${escHtml(result.primary_approver)} <span class="lab-source">(${escHtml(result.primary_source || "")})</span>`
+    ? `${escHtml(result.primary_approver)} <span class="lab-source">(${escHtml(result.primary_source || "")})</span>` +
+      (result.primary_acting_approver
+        ? ` <span class="lab-source">(${escHtml(result.primary_acting_approver)} acting)</span>`
+        : "")
     : "— none —";
   const second = result.second_level_approver
-    ? `${escHtml(result.second_level_approver)} <span class="lab-source">(${escHtml(result.second_level_source || "")})</span>`
+    ? `${escHtml(result.second_level_approver)} <span class="lab-source">(${escHtml(result.second_level_source || "")})</span>` +
+      (result.second_level_acting_approver
+        ? ` <span class="lab-source">(${escHtml(result.second_level_acting_approver)} acting)</span>`
+        : "")
     : "— none —";
   summaryEl.innerHTML = `
     <div class="lab-line"><span class="lab-label">Primary level:</span> ${primary}</div>
@@ -2011,6 +2017,12 @@ function renderTestCaseOverlayResult(result) {
     tag.className = "overlay-source-tag";
     tag.textContent = step.source;
     li.append(document.createTextNode(`${step.approver} `), tag);
+    if (step.acting_approver) {
+      const actingTag = document.createElement("span");
+      actingTag.className = "overlay-source-tag";
+      actingTag.textContent = `${step.acting_approver} acting`;
+      li.append(document.createTextNode(" "), actingTag);
+    }
     if (step.alternate_approvers && step.alternate_approvers.length) {
       li.append(
         document.createTextNode(` (or ${step.alternate_approvers.join(", ")})`)
@@ -2032,7 +2044,7 @@ function renderTestCaseOverlayResult(result) {
 // real chain shown by clicking a node); `target: []` flags inactive cases with
 // no workflow, while any other `target` value is illustrative only.
 const THIRTY_CASES = [
-  { id: 1, category: "Acting & Coverage", title: "Skip-level Acting", focus: "Boris", focusDept: "ITSO", scenario: "A senior leader leaves and a junior employee acts for the whole department.", method: "Add an Acting record and assign the junior to the Acting Senior Leader job position; authority is inherited from that position.", target: [["Boris", "Ivan"]] },
+  { id: 1, category: "Acting & Coverage", title: "Skip-level Acting", focus: "Boris", focusDept: "ITSO", scenario: "A senior leader leaves and a junior employee acts for the whole department.", method: "Add an Acting record and assign the junior to the Acting Senior Leader job position; authority is inherited from that position.", target: [["Boris", "Ivan"]], requestAt: "2027-07-15T00:00:00+00:00", note: "The seeded acting record is keyed on Ivan and active 1–31 Jul 2027. To see it in action, click one of Ivan's dependents (e.g. Isaac) — on the case date their approval line keeps Ivan [official] with Boris annotated as acting on his behalf." },
   { id: 2, category: "Acting & Coverage", title: "Peer Coverage", focus: "Cara", focusDept: "ITSO", scenario: "Team A's manager is on leave; Team B's manager temporarily covers Team A.", method: "Give Team B's manager a second assignment to Acting Team A Head, covering two reporting lines.", target: [["Cara", "Ivan"]] },
   { id: 3, category: "Acting & Coverage", title: "Partial Acting", focus: "Cleo", focusDept: "ITSO", scenario: "Manager leaves; B covers leave approvals, C covers performance reviews.", method: "Decouple workflows by approval type: B under Administrative Head, C under Functional/Dotted-line position.", target: [["Cleo", "Ingrid", "Ivan"], ["Cleo", "Cara", "Ivan"]] },
   { id: 4, category: "Acting & Coverage", title: "Dummy Head", focus: "Hannah", focusDept: "HRO", scenario: "A new department lacks a head, so a neighboring head is temporarily assigned.", method: "Assign the neighboring department head to the new department's Head job position.", target: [["Hannah", "Ivan"]] },
@@ -2222,7 +2234,8 @@ function updateThirtyCasesDetail(simResult) {
   const tc = THIRTY_CASES.find((c) => c.id === thirtyCasesSelected);
   if (!tc) return;
   document.getElementById("thirty-cases-title").textContent = `${tc.id}. ${tc.title} — ${tc.category}`;
-  document.getElementById("thirty-cases-scenario").textContent = tc.scenario;
+  document.getElementById("thirty-cases-scenario").textContent =
+    tc.note ? `${tc.scenario}  ${tc.note}` : tc.scenario;
   const approversEl = document.getElementById("thirty-cases-approvers");
   if (approversEl) {
     approversEl.replaceChildren();
@@ -2237,12 +2250,19 @@ function updateThirtyCasesDetail(simResult) {
       // Real routing answer for this person in this case.
       const steps = simResult.overlay_steps;
       line = `Approver line for ${who} → ` +
-        steps.map((s) => `${s.approver} [${s.source}]`).join(" → ");
+        steps
+          .map(
+            (s) =>
+              `${s.approver} [${s.source}]` +
+              (s.acting_approver ? ` (${s.acting_approver} acting)` : "")
+          )
+          .join(" → ");
       if (approversEl) {
         approversEl.classList.remove("hidden");
         steps.forEach((s) => {
           const li = document.createElement("li");
           li.textContent = `${s.approver} — ${s.source}` +
+            (s.acting_approver ? ` (${s.acting_approver} acting)` : "") +
             (s.alternate_approvers && s.alternate_approvers.length
               ? ` (or ${s.alternate_approvers.join(", ")})`
               : "");
@@ -2345,6 +2365,9 @@ async function runThirtyCasesSimulation(userId) {
         requester_id: Number(userId),
         edges: [],
         action_code: thirtyCasesAction(tc),
+        request_at: (tc && tc.requestAt) || null,
+        project_code: (tc && tc.projectCode) || null,
+        overlays: (tc && tc.overlays) || [],
       }),
     });
     const result = await resp.json();
