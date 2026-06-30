@@ -2045,7 +2045,7 @@ function renderTestCaseOverlayResult(result) {
 // no workflow, while any other `target` value is illustrative only.
 const THIRTY_CASES = [
   { id: 1, category: "Acting & Coverage", title: "Skip-level Acting", focus: "Boris", focusDept: "ITSO", scenario: "A senior leader leaves and a junior employee acts for the whole department.", method: "Add an Acting record and assign the junior to the Acting Senior Leader job position; authority is inherited from that position.", target: [["Boris", "Ivan"]], requestAt: "2027-07-15T00:00:00+00:00", note: "The seeded acting record is keyed on Ivan and active 1–31 Jul 2027. To see it in action, click one of Ivan's dependents (e.g. Isaac) — on the case date their approval line keeps Ivan [official] with Boris annotated as acting on his behalf." },
-  { id: 2, category: "Acting & Coverage", title: "Peer Coverage", focus: "Cyrus", focusDept: "ITSO", scenario: "Applications team lead Cara is on leave, so Infrastructure team lead Ingrid temporarily covers her team — when Cyrus requests annual leave, Ingrid acts as team lead to approve.", method: "Give the covering team lead (Ingrid) a second assignment as Acting Applications Team lead, so Cara's team members route to Ingrid while Cara is away.", target: [["Cyrus", "Ingrid"]] },
+  { id: 2, category: "Acting & Coverage", title: "Peer Coverage", focus: "Cyrus", focusDept: "ITSO", scenario: "Applications team lead Cara is on leave, so Infrastructure team lead Ingrid temporarily covers her team — when Cyrus requests annual leave, Ingrid acts as team lead to approve.", method: "Give the covering team lead (Ingrid) a second assignment as Acting Applications Team lead, so Cara's team members route to Ingrid while Cara is away.", target: [["Cyrus", "Ingrid"]], overlaysByName: [{ type: "peer_coverage", owner: "Cara", substitute: "Ingrid" }] },
   { id: 3, category: "Acting & Coverage", title: "Partial Acting", focus: "Cleo", focusDept: "ITSO", scenario: "Manager leaves; B covers leave approvals, C covers performance reviews.", method: "Decouple workflows by approval type: B under Administrative Head, C under Functional/Dotted-line position.", target: [["Cleo", "Ingrid", "Ivan"], ["Cleo", "Cara", "Ivan"]] },
   { id: 4, category: "Acting & Coverage", title: "Dummy Head", focus: "Hannah", focusDept: "HRO", scenario: "A new department lacks a head, so a neighboring head is temporarily assigned.", method: "Assign the neighboring department head to the new department's Head job position.", target: [["Hannah", "Ivan"]] },
   { id: 5, category: "Acting & Coverage", title: "Self-Approval", focus: "Ingrid", focusDept: "ITSO", scenario: "A manager acting in their own supervisor's role routes their leave back to themselves.", method: "Safeguard: if Submitter == Approver, roll up to next level or route to HR.", target: [["Ingrid", "Ivan"]] },
@@ -2352,6 +2352,37 @@ function thirtyCasesAction(testCase) {
   return (testCase && testCase.action) || "annual_leave";
 }
 
+// Build the overlay specs the routing engine expects for a clicked person under
+// a case. A case may carry literal `overlays` (already using numeric ids) and/or
+// `overlaysByName` entries that name the owner/substitute (e.g. Case #2 peer
+// coverage: Cara covered by Ingrid). Names are resolved to live user ids here,
+// at click time, since the seeded ids are not known when THIRTY_CASES is defined.
+// Entries whose names cannot be resolved are skipped so the simulation still runs.
+function thirtyCasesOverlays(testCase) {
+  const overlays = [...((testCase && testCase.overlays) || [])];
+  const byName = (testCase && testCase.overlaysByName) || [];
+  if (byName.length) {
+    const users = thirtyCasesUsers();
+    const idByName = {};
+    users.forEach((u) => (idByName[u.name] = u.id));
+    byName.forEach((spec) => {
+      const ownerId = idByName[spec.owner];
+      const substituteId = idByName[spec.substitute];
+      if (ownerId == null || substituteId == null) return;
+      const overlay = {
+        type: spec.type,
+        owner_id: ownerId,
+        substitute_id: substituteId,
+      };
+      if (spec.effectiveFrom) overlay.effective_from = spec.effectiveFrom;
+      if (spec.effectiveTo) overlay.effective_to = spec.effectiveTo;
+      if (spec.policy) overlay.policy = spec.policy;
+      overlays.push(overlay);
+    });
+  }
+  return overlays;
+}
+
 // Run the real routing engine for the clicked person under the selected case's
 // action, then bold and list the resolved approver line. Uses the rolled-back
 // /api/simulate-reporting-line endpoint, so nothing is persisted.
@@ -2367,7 +2398,7 @@ async function runThirtyCasesSimulation(userId) {
         action_code: thirtyCasesAction(tc),
         request_at: (tc && tc.requestAt) || null,
         project_code: (tc && tc.projectCode) || null,
-        overlays: (tc && tc.overlays) || [],
+        overlays: thirtyCasesOverlays(tc),
       }),
     });
     const result = await resp.json();
