@@ -617,7 +617,7 @@ def test_simulate_overlay_rejects_unknown_action_code():
     assert result["overlay_error"] == "Action 'does_not_exist' not found."
 
 
-
+def test_simulate_reporting_line_project_overlay_routes_cross_department():
     ids = _user_ids()
     result = simulate_reporting_line(
         requester_id=ids["Peter"],
