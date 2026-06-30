@@ -283,8 +283,8 @@ def _seed_itso_hro_departments(
     annual_leave = actions["annual_leave"]
     sick_leave = actions["sick_leave"]
     training_request = actions["training_request"]
-    session.add_all(
-        [
+    performance_review = actions.get("performance_review")
+    routing_rules = [
             ActionRoutingRule(
                 action_id=annual_leave.id,
                 dept_id=itso.id,
@@ -320,9 +320,27 @@ def _seed_itso_hro_departments(
                 dept_id=hro.id,
                 requires_primary=True,
                 requires_second_level=False,
+            ),
+    ]
+    # Case #3 (Partial Acting): performance reviews are a distinct workflow from
+    # leave approvals, routed primary + second level so the second level still
+    # rolls up to the on-leave manager's own manager (the default second level).
+    if performance_review is not None:
+        routing_rules += [
+            ActionRoutingRule(
+                action_id=performance_review.id,
+                dept_id=itso.id,
+                requires_primary=True,
+                requires_second_level=True,
+            ),
+            ActionRoutingRule(
+                action_id=performance_review.id,
+                dept_id=hro.id,
+                requires_primary=True,
+                requires_second_level=True,
             ),
         ]
-    )
+    session.add_all(routing_rules)
     session.flush()
 
     # Case #1 (Skip-level Acting): a single position-level acting overlay where
@@ -355,6 +373,8 @@ def _seed_itso_hro_departments(
         "itso_isaac": itso_by_name["Isaac"],
         "itso_ingrid": itso_by_name["Ingrid"],
         "itso_cyrus": itso_by_name["Cyrus"],
+        "itso_cara": itso_by_name["Cara"],
+        "itso_cleo": itso_by_name["Cleo"],
         "itso_evan": itso_by_name["Evan"],
         "itso_infra": itso_infra,
         "itso_apps": itso_apps,
@@ -602,6 +622,14 @@ def seed_sample_data(session: Session) -> dict[str, Any]:
         name="Finance Team Plan",
         code="finance_team_plan",
     )
+    # Case #3 (Partial Acting) decouples workflows by approval type: leave
+    # approvals follow one cover, performance reviews follow another. A dedicated
+    # Performance Review action lets each coverage overlay be scoped to its own
+    # workflow so the two routes can diverge for the same on-leave manager.
+    performance_review = Action(
+        name="Performance Review",
+        code="performance_review",
+    )
     session.add_all(
         [
             annual_leave,
@@ -609,6 +637,7 @@ def seed_sample_data(session: Session) -> dict[str, Any]:
             training_request,
             project_change,
             finance_team_plan,
+            performance_review,
         ]
     )
     session.flush()
@@ -787,6 +816,7 @@ def seed_sample_data(session: Session) -> dict[str, Any]:
             "annual_leave": annual_leave,
             "sick_leave": sick_leave,
             "training_request": training_request,
+            "performance_review": performance_review,
         },
     )
 
@@ -837,6 +867,7 @@ def seed_sample_data(session: Session) -> dict[str, Any]:
         "training_request": training_request,
         "project_change": project_change,
         "finance_team_plan": finance_team_plan,
+        "performance_review": performance_review,
         "project_transform": project_transform,
     }
     result.update(extended)

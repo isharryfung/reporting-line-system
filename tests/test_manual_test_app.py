@@ -532,7 +532,92 @@ def test_simulate_reporting_line_delegation_overlay_changes_resolved_approver():
     assert result["overlay_steps"][0]["source"] == "delegation"
 
 
-def test_simulate_reporting_line_project_overlay_routes_cross_department():
+def test_seed_includes_performance_review_action_for_itso():
+    payload = build_bootstrap_payload()
+    assert any(
+        action["code"] == "performance_review" and action["name"] == "Performance Review"
+        for action in payload["actions"]
+    )
+
+
+def test_simulate_reporting_line_partial_acting_decouples_leave_and_review():
+    """Case #3: an on-leave manager's leave approvals and performance reviews
+    route to different covers (scoped by action), while the second level rolls
+    back to the manager's own manager."""
+    ids = _user_ids()
+    overlays = [
+        {
+            "type": "peer_coverage",
+            "owner_id": ids["Cyrus"],
+            "substitute_id": ids["Isaac"],
+            "action_code": "annual_leave",
+        },
+        {
+            "type": "peer_coverage",
+            "owner_id": ids["Cyrus"],
+            "substitute_id": ids["Evan"],
+            "action_code": "performance_review",
+        },
+    ]
+
+    leave = simulate_reporting_line(
+        requester_id=ids["Cleo"], edges=[], action_code="annual_leave", overlays=overlays
+    )
+    assert leave["status"] == "success"
+    assert leave["overlay_steps"][0]["approver"] == "Isaac"
+    assert leave["overlay_steps"][0]["source"] == "peer_coverage"
+    # Second level rolls back to Cyrus's own manager, Cara.
+    assert leave["overlay_steps"][1]["approver"] == "Cara"
+
+    review = simulate_reporting_line(
+        requester_id=ids["Cleo"],
+        edges=[],
+        action_code="performance_review",
+        overlays=overlays,
+    )
+    assert review["status"] == "success"
+    assert review["overlay_steps"][0]["approver"] == "Evan"
+    assert review["overlay_steps"][0]["source"] == "peer_coverage"
+    assert review["overlay_steps"][1]["approver"] == "Cara"
+
+
+def test_simulate_overlay_resolves_action_code_scope():
+    """An overlay scoped by action_code applies only to that action."""
+    ids = _user_ids()
+    overlays = [
+        {
+            "type": "peer_coverage",
+            "owner_id": ids["Cyrus"],
+            "substitute_id": ids["Isaac"],
+            "action_code": "performance_review",
+        }
+    ]
+    # Scoped to performance_review, so annual_leave is unaffected (Cyrus stays).
+    leave = simulate_reporting_line(
+        requester_id=ids["Cleo"], edges=[], action_code="annual_leave", overlays=overlays
+    )
+    assert leave["overlay_steps"][0]["approver"] == "Cyrus"
+
+
+def test_simulate_overlay_rejects_unknown_action_code():
+    ids = _user_ids()
+    result = simulate_reporting_line(
+        requester_id=ids["Cleo"],
+        edges=[],
+        action_code="annual_leave",
+        overlays=[
+            {
+                "type": "peer_coverage",
+                "owner_id": ids["Cyrus"],
+                "substitute_id": ids["Isaac"],
+                "action_code": "does_not_exist",
+            }
+        ],
+    )
+    assert result["overlay_error"] == "Action 'does_not_exist' not found."
+
+
+
     ids = _user_ids()
     result = simulate_reporting_line(
         requester_id=ids["Peter"],

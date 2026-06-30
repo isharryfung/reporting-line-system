@@ -90,7 +90,7 @@ teams, each with its own reporting line up to the department head.
 - **ITSO teams:** Infrastructure, Applications, Service Desk
 - **HRO teams:** Recruitment, Operations
 - Each department has a top-level fallback approver and its own routing rules
-  for Annual Leave, Sick Leave, and Training Request.
+  for Annual Leave, Sick Leave, Training Request, and Performance Review.
 
 ## Frontend POC
 

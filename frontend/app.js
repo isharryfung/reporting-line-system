@@ -2046,7 +2046,7 @@ function renderTestCaseOverlayResult(result) {
 const THIRTY_CASES = [
   { id: 1, category: "Acting & Coverage", title: "Skip-level Acting", focus: "Boris", focusDept: "ITSO", scenario: "A senior leader leaves and a junior employee acts for the whole department.", method: "Add an Acting record and assign the junior to the Acting Senior Leader job position; authority is inherited from that position.", target: [["Boris", "Ivan"]], requestAt: "2027-07-15T00:00:00+00:00", note: "The seeded acting record is keyed on Ivan and active 1–31 Jul 2027. To see it in action, click one of Ivan's dependents (e.g. Isaac) — on the case date their approval line keeps Ivan [official] with Boris annotated as acting on his behalf." },
   { id: 2, category: "Acting & Coverage", title: "Peer Coverage", focus: "Cyrus", focusDept: "ITSO", scenario: "Applications team lead Cara is on leave, so Infrastructure team lead Ingrid temporarily covers her team — when Cyrus requests annual leave, Ingrid acts as team lead to approve.", method: "Give the covering team lead (Ingrid) a second assignment as Acting Applications Team lead, so Cara's team members route to Ingrid while Cara is away.", target: [["Cyrus", "Ingrid"]], overlaysByName: [{ type: "peer_coverage", owner: "Cara", substitute: "Ingrid" }] },
-  { id: 3, category: "Acting & Coverage", title: "Partial Acting", focus: "Cleo", focusDept: "ITSO", scenario: "Manager leaves; B covers leave approvals, C covers performance reviews.", method: "Decouple workflows by approval type: B under Administrative Head, C under Functional/Dotted-line position.", target: [["Cleo", "Ingrid", "Ivan"], ["Cleo", "Cara", "Ivan"]] },
+  { id: 3, category: "Acting & Coverage", title: "Partial Acting", focus: "Cleo", focusDept: "ITSO", scenario: "Manager Cyrus is on leave, so his approvals are split by type: one peer covers leave approvals and another covers performance reviews, while the second level rolls back to his own manager (Cara). E.g. when Cleo applies for annual leave, Isaac approves it; Cara remains the second level.", method: "Decouple workflows by approval type: leave-approval cover and performance-review cover are separate action-scoped coverage overlays; the second level stays the on-leave manager's own manager.", action: "annual_leave", partialActing: { manager: "Cyrus", leaveCover: "Isaac", reviewCover: "Evan", leaveAction: "annual_leave", reviewAction: "performance_review" }, target: [["Cleo", "Isaac", "Cara"]] },
   { id: 4, category: "Acting & Coverage", title: "Dummy Head", focus: "Hannah", focusDept: "HRO", scenario: "A new department lacks a head, so a neighboring head is temporarily assigned.", method: "Assign the neighboring department head to the new department's Head job position.", target: [["Hannah", "Ivan"]] },
   { id: 5, category: "Acting & Coverage", title: "Self-Approval", focus: "Ingrid", focusDept: "ITSO", scenario: "A manager acting in their own supervisor's role routes their leave back to themselves.", method: "Safeguard: if Submitter == Approver, roll up to next level or route to HR.", target: [["Ingrid", "Ivan"]] },
   { id: 6, category: "Acting & Coverage", title: "Handover Overlap", focus: "Isaac", focusDept: "ITSO", scenario: "Old and new managers occupy the same Head position during a 2-week overlap.", method: "Support over-hiring; HR specifies who holds approval authority during transition.", target: [["Isaac", "Ingrid", "Ivan"]] },
@@ -2094,6 +2094,14 @@ let thirtyCasesSimChain = null;
 // user ids; null = use the case's documented defaults. Non-persistent.
 let thirtyCasesPeerOwnerId = null;
 let thirtyCasesPeerSubstituteId = null;
+// For partial-acting cases (e.g. Case #3) the user can choose which manager is
+// on leave and which peers cover their leave approvals vs performance reviews,
+// plus which of those two workflows to simulate. null = use case defaults.
+// Non-persistent.
+let thirtyCasesPartialManagerId = null;
+let thirtyCasesPartialLeaveCoverId = null;
+let thirtyCasesPartialReviewCoverId = null;
+let thirtyCasesPartialMode = "leave";
 
 function thirtyCasesUsers() {
   const users = [];
@@ -2176,6 +2184,15 @@ function initThirtyCases() {
     const peerSubSel = document.getElementById("thirty-cases-peer-substitute");
     if (peerOwnerSel) peerOwnerSel.addEventListener("change", onThirtyCasesPeerChange);
     if (peerSubSel) peerSubSel.addEventListener("change", onThirtyCasesPeerChange);
+    [
+      "thirty-cases-partial-manager",
+      "thirty-cases-partial-leave-cover",
+      "thirty-cases-partial-review-cover",
+      "thirty-cases-partial-mode",
+    ].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener("change", onThirtyCasesPartialChange);
+    });
     thirtyCasesReady = true;
   }
   renderThirtyCasesDiagram();
@@ -2235,6 +2252,10 @@ function thirtyCasesTargetChain(users, testCase) {
   // covering team leads so changing the selectors re-bolds the handoff line.
   const peerChain = thirtyCasesPeerActiveChain(users, testCase);
   if (peerChain) return peerChain;
+  // Partial-acting cases derive their target line from the chosen on-leave
+  // manager, the active cover (leave vs review), and the default second level.
+  const partialChain = thirtyCasesPartialActiveChain(users, testCase);
+  if (partialChain) return partialChain;
   // Bold each case's explicit, scenario-specific target line(s) so overlay,
   // override, skip-level and co-head cases highlight the documented approver
   // chain rather than the focus member's plain primary line.
@@ -2359,13 +2380,26 @@ function selectThirtyCase(id) {
   thirtyCasesPeerOwnerId = null;
   thirtyCasesPeerSubstituteId = null;
   renderThirtyCasesPeerControls(THIRTY_CASES.find((c) => c.id === id));
+  // Reset partial-acting choices back to the case's documented defaults.
+  thirtyCasesPartialManagerId = null;
+  thirtyCasesPartialLeaveCoverId = null;
+  thirtyCasesPartialReviewCoverId = null;
+  thirtyCasesPartialMode = "leave";
+  renderThirtyCasesPartialControls(THIRTY_CASES.find((c) => c.id === id));
   updateThirtyCasesDetail();
   renderThirtyCasesDiagram();
 }
 
 // Action used when simulating a clicked person's real approval line. Cases may
 // nominate an action; otherwise leave (annual_leave) is the representative flow.
+// Partial-acting cases switch action with the chosen workflow (leave vs review).
 function thirtyCasesAction(testCase) {
+  const spec = thirtyCasesPartialSpec(testCase);
+  if (spec) {
+    return thirtyCasesPartialMode === "review"
+      ? spec.reviewAction || "performance_review"
+      : spec.leaveAction || "annual_leave";
+  }
   return (testCase && testCase.action) || "annual_leave";
 }
 
@@ -2402,6 +2436,7 @@ function thirtyCasesOverlays(testCase) {
       overlays.push(overlay);
     });
   }
+  thirtyCasesPartialOverlays(testCase).forEach((overlay) => overlays.push(overlay));
   return overlays;
 }
 
@@ -2493,6 +2528,151 @@ function onThirtyCasesPeerChange() {
   }
 }
 
+
+// Return the partial-acting spec for a case, if any. These cases (e.g. Case #3)
+// expose selectors for the on-leave manager and their leave / review covers.
+function thirtyCasesPartialSpec(testCase) {
+  return (testCase && testCase.partialActing) || null;
+}
+
+// Resolve the currently chosen on-leave manager and the two covers (leave /
+// performance review) for a partial-acting case, falling back to its defaults.
+function thirtyCasesPartialSelection(users, testCase) {
+  const spec = thirtyCasesPartialSpec(testCase);
+  if (!spec) return null;
+  const byName = (name) => {
+    const u = users.find((x) => x.name === name);
+    return u ? u.id : null;
+  };
+  const managerId = thirtyCasesPartialManagerId != null
+    ? thirtyCasesPartialManagerId
+    : byName(spec.manager);
+  const leaveCoverId = thirtyCasesPartialLeaveCoverId != null
+    ? thirtyCasesPartialLeaveCoverId
+    : byName(spec.leaveCover);
+  const reviewCoverId = thirtyCasesPartialReviewCoverId != null
+    ? thirtyCasesPartialReviewCoverId
+    : byName(spec.reviewCover);
+  return { managerId, leaveCoverId, reviewCoverId, mode: thirtyCasesPartialMode };
+}
+
+// Build the two action-scoped coverage overlays for a partial-acting case: the
+// on-leave manager's leave approvals route to the leave cover, while their
+// performance reviews route to the review cover. Scoping each overlay to its own
+// action keeps the two workflows decoupled when a person is simulated.
+function thirtyCasesPartialOverlays(testCase) {
+  const spec = thirtyCasesPartialSpec(testCase);
+  if (!spec) return [];
+  const users = thirtyCasesUsers();
+  const sel = thirtyCasesPartialSelection(users, testCase);
+  if (!sel || sel.managerId == null) return [];
+  const overlays = [];
+  if (sel.leaveCoverId != null) {
+    overlays.push({
+      type: "peer_coverage",
+      owner_id: sel.managerId,
+      substitute_id: sel.leaveCoverId,
+      action_code: spec.leaveAction || "annual_leave",
+    });
+  }
+  if (sel.reviewCoverId != null) {
+    overlays.push({
+      type: "peer_coverage",
+      owner_id: sel.managerId,
+      substitute_id: sel.reviewCoverId,
+      action_code: spec.reviewAction || "performance_review",
+    });
+  }
+  return overlays;
+}
+
+// Build the illustrative default target line for a partial-acting case: one of
+// the on-leave manager's direct reports routes to the active cover (leave or
+// review), then up to the manager's own manager (the default second level).
+function thirtyCasesPartialActiveChain(users, testCase) {
+  const sel = thirtyCasesPartialSelection(users, testCase);
+  if (!sel || sel.managerId == null) return null;
+  const manager = users.find((u) => u.id === sel.managerId);
+  if (!manager) return null;
+  const activeCoverId = sel.mode === "review" ? sel.reviewCoverId : sel.leaveCoverId;
+  const cover = users.find((u) => u.id === activeCoverId);
+  const report = users.find((u) => u.manager_name === manager.name);
+  const secondLevel = users.find((u) => u.name === manager.manager_name);
+  const head = report || manager;
+  const chain = [head.name];
+  if (cover) chain.push(cover.name);
+  if (secondLevel) chain.push(secondLevel.name);
+  return chain.length > 1 ? [chain] : null;
+}
+
+// Populate and show the manager / leave-cover / review-cover selectors plus the
+// workflow toggle for partial-acting cases, or hide them for any other case.
+// Manager candidates are people who manage others in the case's department;
+// covers are the team leads / sub-leads who could step in.
+function renderThirtyCasesPartialControls(testCase) {
+  const wrap = document.getElementById("thirty-cases-partial-controls");
+  const managerSel = document.getElementById("thirty-cases-partial-manager");
+  const leaveSel = document.getElementById("thirty-cases-partial-leave-cover");
+  const reviewSel = document.getElementById("thirty-cases-partial-review-cover");
+  const modeSel = document.getElementById("thirty-cases-partial-mode");
+  if (!wrap || !managerSel || !leaveSel || !reviewSel || !modeSel) return;
+  const spec = thirtyCasesPartialSpec(testCase);
+  if (!spec) {
+    wrap.classList.add("hidden");
+    return;
+  }
+  const users = thirtyCasesUsers();
+  const defaultManager = users.find((u) => u.name === spec.manager);
+  const dept = defaultManager ? defaultManager.department_code : null;
+  const inDept = (u) => !dept || u.department_code === dept;
+  // Managers: anyone in the department who has at least one direct report.
+  const managerNames = new Set(
+    users.filter((u) => u.manager_name).map((u) => u.manager_name)
+  );
+  const managers = users.filter((u) => inDept(u) && managerNames.has(u.name));
+  // Covers: team leads or anyone who manages others (a like-for-like stand-in).
+  const covers = users.filter(
+    (u) => inDept(u) && (u.is_team_lead || managerNames.has(u.name))
+  );
+  const managerPool = managers.length ? managers : users;
+  const coverPool = covers.length ? covers : users;
+  const sel = thirtyCasesPartialSelection(users, testCase) || {};
+  const fill = (select, pool, selectedId) => {
+    select.replaceChildren(
+      ...pool.map((u) => {
+        const opt = document.createElement("option");
+        opt.value = String(u.id);
+        opt.textContent = `${u.name} — ${u.department_code} / ${u.level_name}`;
+        if (u.id === selectedId) opt.selected = true;
+        return opt;
+      })
+    );
+  };
+  fill(managerSel, managerPool, sel.managerId);
+  fill(leaveSel, coverPool, sel.leaveCoverId);
+  fill(reviewSel, coverPool, sel.reviewCoverId);
+  modeSel.value = thirtyCasesPartialMode;
+  wrap.classList.remove("hidden");
+}
+
+// React to a change in any partial-acting selector: record the choices, re-bold
+// the default line, and re-run the simulation for any person currently clicked.
+function onThirtyCasesPartialChange() {
+  const managerSel = document.getElementById("thirty-cases-partial-manager");
+  const leaveSel = document.getElementById("thirty-cases-partial-leave-cover");
+  const reviewSel = document.getElementById("thirty-cases-partial-review-cover");
+  const modeSel = document.getElementById("thirty-cases-partial-mode");
+  thirtyCasesPartialManagerId = managerSel && managerSel.value ? Number(managerSel.value) : null;
+  thirtyCasesPartialLeaveCoverId = leaveSel && leaveSel.value ? Number(leaveSel.value) : null;
+  thirtyCasesPartialReviewCoverId = reviewSel && reviewSel.value ? Number(reviewSel.value) : null;
+  thirtyCasesPartialMode = modeSel && modeSel.value === "review" ? "review" : "leave";
+  renderThirtyCasesDiagram();
+  if (thirtyCasesFocusOverride != null) {
+    runThirtyCasesSimulation(thirtyCasesFocusOverride);
+  } else {
+    updateThirtyCasesDetail();
+  }
+}
 
 async function runThirtyCasesSimulation(userId) {
   const tc = THIRTY_CASES.find((c) => c.id === thirtyCasesSelected);
