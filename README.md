@@ -125,9 +125,12 @@ The browser UI is organized into eight tabs:
   approver line: pick an **action** (and optional **project code** / **request
   date**) and add **acting**, **delegation**, or other overlay rows. Co-head and
   self-approval-blocked behaviour appear automatically for the chosen action.
-  Each resolved step is tagged with its routing **source** (e.g. `acting`,
-  `delegation`, `project`, `co_head`, `self_approval_redirect`). Overlays are
-  simulated in the same rolled-back transaction and **never saved**
+  Each resolved step is tagged with its routing **source** (e.g.
+  `delegation`, `project`, `co_head`, `self_approval_redirect`). **Acting** is
+  additive: the official authority owner stays on the step and the acting holder
+  is shown as an annotation (e.g. `Ivan [official] (Boris acting)`) rather than
+  replacing the owner. Overlays are simulated in the same rolled-back
+  transaction and **never saved**
 - Circular reporting lines created while editing are detected and reported
 - **Reset diagram** restores the official reporting lines
 

@@ -162,8 +162,13 @@ A team lead may edit reporting-line data only when all conditions are true:
 
 ### Supported overlay policies
 
-- **Acting** — replaces an approver during a valid date range with optional
-  department/org-unit/action scope
+- **Acting** — the official approver stays the **authority owner** on the
+  approval line and the acting person is recorded as an **acting holder**
+  annotation on the same step (additive, not a swap). For example, when Boris
+  acts for Ivan, Isaac's line reads `Ingrid [official] → Ivan [official] (Boris
+  acting)` rather than replacing Ivan with Boris. Applies during a valid date
+  range with optional department/org-unit/action scope. If the acting holder is
+  the requester, self-approval prevention still escalates past them.
 - **Peer coverage** — temporary peer replacement without changing official
   org chart or primary manager
 - **Delegation** — temporary delegated approval with active-user and
@@ -318,7 +323,7 @@ mutating the persisted POC state.
 | BC-04 | Finance top-level fallback routing | Requester Fiona, action `annual_leave` | Fiona is Finance top-level user; Finance fallback approver is Henry | Henry as fallback approver | One fallback step is returned |
 | BC-05 | Org chart display with org-units, team leads, and co-heads | Department `FIN` | Finance Team and Payroll Team exist; Mary is team lead; Mary and Nina are co-heads | Org chart shows org-units, members, direct managers, team leads, and co-heads | UI/API returns Finance Team with Mary in `team_leads` and Mary/Nina in `co_heads` |
 | BC-06 | Team lead edits lower-level user in same org-unit | Editor Mary, target Peter | Mary is Finance Team lead; Peter is lower-level Finance Team member | Allowed | Permission check returns `allowed = true` |
-| BC-07 | Acting replaces approver during valid date range | Requester Peter, action `sick_leave`, date `2027-06-15` | Mary has acting assignment to Nina for sick leave | Nina replaces Mary | Routing shows acting overlay explanation and Nina as approver |
+| BC-07 | Acting annotates approver during valid date range | Requester Peter, action `sick_leave`, date `2027-06-15` | Mary has acting assignment to Nina for sick leave | Mary stays approver with Nina as acting holder | Routing shows Mary `[official]` with a Nina acting annotation on the same step |
 | BC-08 | Acting ignored outside date range | Requester Peter, action `sick_leave`, date `2027-07-15` | Acting assignment expired | Mary remains approver | Routing ignores acting overlay |
 | BC-09 | Peer coverage replaces approver during valid coverage | Requester Peter, action `annual_leave`, date `2027-08-15` | Mary is covered by Nina for annual leave | Nina then Fiona | Routing shows coverage overlay and audit log |
 | BC-10 | Delegation replaces approver during valid date range | Requester Peter, action `annual_leave`, date `2027-09-15` | Mary delegates annual leave to Nina | Nina then Fiona | Routing shows delegation overlay and audit log |
