@@ -683,6 +683,33 @@ th {
   font-size: 0.9rem;
 }
 
+.thirty-cases-peer-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 0.5rem 0;
+}
+
+.thirty-cases-peer-controls.hidden {
+  display: none;
+}
+
+.thirty-cases-peer-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+  color: #6a7a90;
+}
+
+.thirty-cases-peer-controls select {
+  padding: 0.35rem 0.5rem;
+  border: 1px solid #d8e2f0;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 0.9rem;
+}
+
 .thirty-case-row {
   display: flex;
   gap: 0.5rem;

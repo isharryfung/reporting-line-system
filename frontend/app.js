@@ -2089,6 +2089,11 @@ let thirtyCasesFocusOverride = null;
 // Resolved approval line (real routing simulation) for the clicked focus person
 // under the selected case's action; null until a person is clicked. Not persisted.
 let thirtyCasesSimChain = null;
+// For peer-coverage cases (e.g. Case #2) the user can choose which team lead is
+// on leave (owner) and which peer covers (substitute). These hold the chosen
+// user ids; null = use the case's documented defaults. Non-persistent.
+let thirtyCasesPeerOwnerId = null;
+let thirtyCasesPeerSubstituteId = null;
 
 function thirtyCasesUsers() {
   const users = [];
@@ -2167,6 +2172,10 @@ function initThirtyCases() {
         applyThirtyCasesFilter();
       });
     }
+    const peerOwnerSel = document.getElementById("thirty-cases-peer-owner");
+    const peerSubSel = document.getElementById("thirty-cases-peer-substitute");
+    if (peerOwnerSel) peerOwnerSel.addEventListener("change", onThirtyCasesPeerChange);
+    if (peerSubSel) peerSubSel.addEventListener("change", onThirtyCasesPeerChange);
     thirtyCasesReady = true;
   }
   renderThirtyCasesDiagram();
@@ -2222,6 +2231,10 @@ function renderThirtyCasesDiagram() {
 // chain — the same logic used when a node is clicked.
 function thirtyCasesTargetChain(users, testCase) {
   if (!testCase || (testCase.target && testCase.target.length === 0)) return null;
+  // Peer-coverage cases derive their target line from the chosen on-leave /
+  // covering team leads so changing the selectors re-bolds the handoff line.
+  const peerChain = thirtyCasesPeerActiveChain(users, testCase);
+  if (peerChain) return peerChain;
   // Bold each case's explicit, scenario-specific target line(s) so overlay,
   // override, skip-level and co-head cases highlight the documented approver
   // chain rather than the focus member's plain primary line.
@@ -2342,6 +2355,10 @@ function selectThirtyCase(id) {
   // Reset any manual focus override so the case's hardcoded target shows first.
   thirtyCasesFocusOverride = null;
   thirtyCasesSimChain = null;
+  // Reset peer-coverage choices back to the case's documented defaults.
+  thirtyCasesPeerOwnerId = null;
+  thirtyCasesPeerSubstituteId = null;
+  renderThirtyCasesPeerControls(THIRTY_CASES.find((c) => c.id === id));
   updateThirtyCasesDetail();
   renderThirtyCasesDiagram();
 }
@@ -2366,8 +2383,13 @@ function thirtyCasesOverlays(testCase) {
     const idByName = {};
     users.forEach((u) => (idByName[u.name] = u.id));
     byName.forEach((spec) => {
-      const ownerId = idByName[spec.owner];
-      const substituteId = idByName[spec.substitute];
+      let ownerId = idByName[spec.owner];
+      let substituteId = idByName[spec.substitute];
+      // Peer-coverage cases let the user override who is on leave / who covers.
+      if (spec.type === "peer_coverage") {
+        if (thirtyCasesPeerOwnerId != null) ownerId = thirtyCasesPeerOwnerId;
+        if (thirtyCasesPeerSubstituteId != null) substituteId = thirtyCasesPeerSubstituteId;
+      }
       if (ownerId == null || substituteId == null) return;
       const overlay = {
         type: spec.type,
@@ -2383,9 +2405,95 @@ function thirtyCasesOverlays(testCase) {
   return overlays;
 }
 
-// Run the real routing engine for the clicked person under the selected case's
-// action, then bold and list the resolved approver line. Uses the rolled-back
-// /api/simulate-reporting-line endpoint, so nothing is persisted.
+// Return the single peer_coverage overlay spec for a case, if any. These cases
+// (e.g. Case #2) expose owner/substitute selectors so the situation is editable.
+function thirtyCasesPeerSpec(testCase) {
+  const byName = (testCase && testCase.overlaysByName) || [];
+  return byName.find((s) => s.type === "peer_coverage") || null;
+}
+
+// Resolve the currently chosen owner (on leave) and substitute (peer cover) ids
+// for a peer-coverage case, falling back to the case's documented defaults.
+function thirtyCasesPeerSelection(users, testCase) {
+  const spec = thirtyCasesPeerSpec(testCase);
+  if (!spec) return null;
+  const defaultOwner = users.find((u) => u.name === spec.owner);
+  const defaultSub = users.find((u) => u.name === spec.substitute);
+  const ownerId = thirtyCasesPeerOwnerId != null
+    ? thirtyCasesPeerOwnerId
+    : (defaultOwner ? defaultOwner.id : null);
+  const substituteId = thirtyCasesPeerSubstituteId != null
+    ? thirtyCasesPeerSubstituteId
+    : (defaultSub ? defaultSub.id : null);
+  return { ownerId, substituteId };
+}
+
+// Build an illustrative default target line for a peer-coverage case: one of the
+// on-leave lead's direct reports now routes to the covering lead. Falls back to
+// the handoff edge owner → substitute when the lead has no direct reports.
+function thirtyCasesPeerActiveChain(users, testCase) {
+  const sel = thirtyCasesPeerSelection(users, testCase);
+  if (!sel) return null;
+  const owner = users.find((u) => u.id === sel.ownerId);
+  const sub = users.find((u) => u.id === sel.substituteId);
+  if (!owner || !sub) return null;
+  const report = users.find((u) => u.manager_name === owner.name);
+  return report ? [[report.name, sub.name]] : [[owner.name, sub.name]];
+}
+
+// Populate and show the owner/substitute selectors for peer-coverage cases, or
+// hide them for any other case. Candidates are the team leads in the on-leave
+// lead's department, so users pick a like-for-like peer to cover the team.
+function renderThirtyCasesPeerControls(testCase) {
+  const wrap = document.getElementById("thirty-cases-peer-controls");
+  const ownerSel = document.getElementById("thirty-cases-peer-owner");
+  const subSel = document.getElementById("thirty-cases-peer-substitute");
+  if (!wrap || !ownerSel || !subSel) return;
+  const spec = thirtyCasesPeerSpec(testCase);
+  if (!spec) {
+    wrap.classList.add("hidden");
+    return;
+  }
+  const users = thirtyCasesUsers();
+  const defaultOwner = users.find((u) => u.name === spec.owner);
+  const dept = defaultOwner ? defaultOwner.department_code : null;
+  const leads = users.filter(
+    (u) => u.is_team_lead && (!dept || u.department_code === dept)
+  );
+  const candidates = leads.length ? leads : users;
+  const sel = thirtyCasesPeerSelection(users, testCase) || {};
+  const fill = (select, selectedId) => {
+    select.replaceChildren(
+      ...candidates.map((u) => {
+        const opt = document.createElement("option");
+        opt.value = String(u.id);
+        opt.textContent = `${u.name} — ${u.department_code} / ${u.level_name}`;
+        if (u.id === selectedId) opt.selected = true;
+        return opt;
+      })
+    );
+  };
+  fill(ownerSel, sel.ownerId);
+  fill(subSel, sel.substituteId);
+  wrap.classList.remove("hidden");
+}
+
+// React to a change in either selector: record the choice, re-bold the default
+// line, and re-run the simulation for any person currently clicked.
+function onThirtyCasesPeerChange() {
+  const ownerSel = document.getElementById("thirty-cases-peer-owner");
+  const subSel = document.getElementById("thirty-cases-peer-substitute");
+  thirtyCasesPeerOwnerId = ownerSel && ownerSel.value ? Number(ownerSel.value) : null;
+  thirtyCasesPeerSubstituteId = subSel && subSel.value ? Number(subSel.value) : null;
+  renderThirtyCasesDiagram();
+  if (thirtyCasesFocusOverride != null) {
+    runThirtyCasesSimulation(thirtyCasesFocusOverride);
+  } else {
+    updateThirtyCasesDetail();
+  }
+}
+
+
 async function runThirtyCasesSimulation(userId) {
   const tc = THIRTY_CASES.find((c) => c.id === thirtyCasesSelected);
   try {
