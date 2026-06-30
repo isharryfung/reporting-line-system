@@ -2032,7 +2032,7 @@ function renderTestCaseOverlayResult(result) {
 // real chain shown by clicking a node); `target: []` flags inactive cases with
 // no workflow, while any other `target` value is illustrative only.
 const THIRTY_CASES = [
-  { id: 1, category: "Acting & Coverage", title: "Skip-level Acting", focus: "Boris", focusDept: "ITSO", scenario: "A senior leader leaves and a junior employee acts for the whole department.", method: "Add an Acting record and assign the junior to the Acting Senior Leader job position; authority is inherited from that position.", target: [["Boris", "Ivan"]] },
+  { id: 1, category: "Acting & Coverage", title: "Skip-level Acting", focus: "Boris", focusDept: "ITSO", scenario: "A senior leader leaves and a junior employee acts for the whole department.", method: "Add an Acting record and assign the junior to the Acting Senior Leader job position; authority is inherited from that position.", target: [["Boris", "Ivan"]], requestAt: "2027-07-15T00:00:00+00:00", note: "The seeded acting record is keyed on Ivan and active 1–31 Jul 2027. To see it in action, click one of Ivan's dependents (e.g. Isaac) — on the case date their approval routes to Boris (acting for Ivan) instead of Ivan." },
   { id: 2, category: "Acting & Coverage", title: "Peer Coverage", focus: "Cara", focusDept: "ITSO", scenario: "Team A's manager is on leave; Team B's manager temporarily covers Team A.", method: "Give Team B's manager a second assignment to Acting Team A Head, covering two reporting lines.", target: [["Cara", "Ivan"]] },
   { id: 3, category: "Acting & Coverage", title: "Partial Acting", focus: "Cleo", focusDept: "ITSO", scenario: "Manager leaves; B covers leave approvals, C covers performance reviews.", method: "Decouple workflows by approval type: B under Administrative Head, C under Functional/Dotted-line position.", target: [["Cleo", "Ingrid", "Ivan"], ["Cleo", "Cara", "Ivan"]] },
   { id: 4, category: "Acting & Coverage", title: "Dummy Head", focus: "Hannah", focusDept: "HRO", scenario: "A new department lacks a head, so a neighboring head is temporarily assigned.", method: "Assign the neighboring department head to the new department's Head job position.", target: [["Hannah", "Ivan"]] },
@@ -2222,7 +2222,8 @@ function updateThirtyCasesDetail(simResult) {
   const tc = THIRTY_CASES.find((c) => c.id === thirtyCasesSelected);
   if (!tc) return;
   document.getElementById("thirty-cases-title").textContent = `${tc.id}. ${tc.title} — ${tc.category}`;
-  document.getElementById("thirty-cases-scenario").textContent = tc.scenario;
+  document.getElementById("thirty-cases-scenario").textContent =
+    tc.note ? `${tc.scenario}  ${tc.note}` : tc.scenario;
   const approversEl = document.getElementById("thirty-cases-approvers");
   if (approversEl) {
     approversEl.replaceChildren();
@@ -2345,6 +2346,9 @@ async function runThirtyCasesSimulation(userId) {
         requester_id: Number(userId),
         edges: [],
         action_code: thirtyCasesAction(tc),
+        request_at: (tc && tc.requestAt) || null,
+        project_code: (tc && tc.projectCode) || null,
+        overlays: (tc && tc.overlays) || [],
       }),
     });
     const result = await resp.json();
