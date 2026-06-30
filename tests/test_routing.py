@@ -144,6 +144,34 @@ def test_acting_ignored_outside_date_range(db_session, seed):
     assert [step.approver.id for step in chain.steps] == [seed["mary"].id]
 
 
+def test_position_level_acting_cascades_to_all_second_level_dependents(db_session, seed):
+    # Case #1: one acting overlay (Ivan -> Boris) replaces Ivan as the
+    # second-level approver for every dependent who rolls up to him, without
+    # any per-employee reporting-line edits.
+    for requester_key in ("itso_isaac", "itso_cyrus", "itso_evan"):
+        chain = build_approval_chain(
+            db_session,
+            seed[requester_key].id,
+            "annual_leave",
+            request_at=dt(2027, 7, 15),
+        )
+        second_level = chain.steps[1]
+        assert second_level.approver.id == seed["itso_boris"].id
+        assert second_level.source == "acting"
+
+
+def test_position_level_acting_leaves_default_chain_unchanged_off_date(db_session, seed):
+    chain = build_approval_chain(
+        db_session,
+        seed["itso_isaac"].id,
+        "annual_leave",
+        request_at=dt(2027, 6, 15),
+    )
+    second_level = chain.steps[1]
+    assert second_level.approver.id == seed["itso_ivan"].id
+    assert second_level.source == "official"
+
+
 def test_peer_coverage_replaces_approver_during_valid_coverage(db_session, seed):
     chain = build_approval_chain(
         db_session,
