@@ -2050,7 +2050,7 @@ const THIRTY_CASES = [
   { id: 4, category: "Acting & Coverage", title: "Dummy Head", focus: "Hannah", focusDept: "HRO", scenario: "A new department lacks a head, so a neighboring head is temporarily assigned.", method: "Assign the neighboring department head to the new department's Head job position.", target: [["Hannah", "Ivan"]] },
   { id: 5, category: "Acting & Coverage", title: "Self-Approval", focus: "Ingrid", focusDept: "ITSO", scenario: "A manager acting in their own supervisor's role routes their leave back to themselves.", method: "Safeguard: if Submitter == Approver, roll up to next level or route to HR.", target: [["Ingrid", "Ivan"]] },
   { id: 6, category: "Acting & Coverage", title: "Handover Overlap", focus: "Isaac", focusDept: "ITSO", scenario: "Old and new managers occupy the same Head position during a 2-week overlap.", method: "Support over-hiring; HR specifies who holds approval authority during transition.", target: [["Isaac", "Ingrid", "Ivan"]] },
-  { id: 7, category: "Matrix & Dual Reporting", title: "Cross-Department Project", focus: "Boris", focusDept: "ITSO", scenario: "An IT employee is seconded 100% to HR for a six-month project.", method: "Keep IT job position for payroll; add Override_Reports_To to the HR Project Manager for leave approval.", target: [["Boris", "Hannah"]] },
+  { id: 7, category: "Matrix & Dual Reporting", title: "Cross-Department Project", focus: "Boris", focusDept: "ITSO", scenario: "An IT employee (Boris) is seconded 100% to HR for a six-month project, so their leave is approved by their HR project manager (Hazel) then her own manager (Harvey).", method: "Keep IT job position for payroll; add Override_Reports_To to an HR manager so leave routes to the chosen primary approver (Hazel) then her manager as second level (Harvey).", action: "annual_leave", override: { employee: "Boris", primaryApprover: "Hazel", targetDept: "HRO" } },
   { id: 8, category: "Matrix & Dual Reporting", title: "Split Allocation", focus: "Bruno", focusDept: "ITSO", scenario: "A professor spends 50% in two schools.", method: "Create two job assignments and define which is the main approval line.", target: [["Bruno", "Ingrid", "Ivan"]] },
   { id: 9, category: "Matrix & Dual Reporting", title: "Co-Heads", focus: "Cara", focusDept: "ITSO", scenario: "A team has two equal Co-Directors.", method: "Link the Org Unit to multiple Co-Head positions; workflow is Any-One-Approve.", target: [["Cara", "Ivan"], ["Cara", "Ingrid"]] },
   { id: 10, category: "Matrix & Dual Reporting", title: "Executive Assistant Delegation", focus: "Ivan", focusDept: "ITSO", scenario: "An executive never logs in; their EA handles all approvals.", method: "Delegation module: executive delegates authority to the EA; audit log records on-behalf-of.", target: [["Isaac", "Ivan"]] },
@@ -2102,6 +2102,12 @@ let thirtyCasesPartialManagerId = null;
 let thirtyCasesPartialLeaveCoverId = null;
 let thirtyCasesPartialReviewCoverId = null;
 let thirtyCasesPartialMode = "leave";
+// For override / secondment cases (e.g. Case #7) the user can choose which IT
+// employee is seconded and which manager is their primary approver; the second
+// level then emerges from that manager's own reporting line. null = use case
+// defaults. Non-persistent.
+let thirtyCasesOverrideEmployeeId = null;
+let thirtyCasesOverridePrimaryId = null;
 
 function thirtyCasesUsers() {
   const users = [];
@@ -2193,6 +2199,14 @@ function initThirtyCases() {
       const el = document.getElementById(id);
       if (el) el.addEventListener("change", onThirtyCasesPartialChange);
     });
+    const overrideEmployeeSel = document.getElementById("thirty-cases-override-employee");
+    if (overrideEmployeeSel) {
+      overrideEmployeeSel.addEventListener("change", onThirtyCasesOverrideChange);
+    }
+    const overridePrimarySel = document.getElementById("thirty-cases-override-primary");
+    if (overridePrimarySel) {
+      overridePrimarySel.addEventListener("change", onThirtyCasesOverrideChange);
+    }
     thirtyCasesReady = true;
   }
   renderThirtyCasesDiagram();
@@ -2256,6 +2270,11 @@ function thirtyCasesTargetChain(users, testCase) {
   // manager, the active cover (leave vs review), and the default second level.
   const partialChain = thirtyCasesPartialActiveChain(users, testCase);
   if (partialChain) return partialChain;
+  // Override / secondment cases (e.g. Case #7) derive their target line from the
+  // seconded employee, the chosen primary approver, and that approver's own
+  // manager (the emergent second level).
+  const overrideChain = thirtyCasesOverrideActiveChain(users, testCase);
+  if (overrideChain) return overrideChain;
   // Bold each case's explicit, scenario-specific target line(s) so overlay,
   // override, skip-level and co-head cases highlight the documented approver
   // chain rather than the focus member's plain primary line.
@@ -2386,6 +2405,10 @@ function selectThirtyCase(id) {
   thirtyCasesPartialReviewCoverId = null;
   thirtyCasesPartialMode = "leave";
   renderThirtyCasesPartialControls(THIRTY_CASES.find((c) => c.id === id));
+  // Reset override / secondment choices back to the case's documented default.
+  thirtyCasesOverrideEmployeeId = null;
+  thirtyCasesOverridePrimaryId = null;
+  renderThirtyCasesOverrideControls(THIRTY_CASES.find((c) => c.id === id));
   updateThirtyCasesDetail();
   renderThirtyCasesDiagram();
 }
@@ -2674,6 +2697,131 @@ function onThirtyCasesPartialChange() {
   }
 }
 
+// Return the override / secondment spec for a case, if any. These cases (e.g.
+// Case #7) keep the employee's home position for payroll but override their
+// reporting line so leave routes to a chosen HR manager (the primary approver).
+function thirtyCasesOverrideSpec(testCase) {
+  return (testCase && testCase.override) || null;
+}
+
+// Resolve the seconded employee and the currently chosen primary approver for an
+// override case, falling back to the case's documented default approver.
+function thirtyCasesOverrideSelection(users, testCase) {
+  const spec = thirtyCasesOverrideSpec(testCase);
+  if (!spec) return null;
+  const defaultEmployee = users.find((u) => u.name === spec.employee);
+  const defaultPrimary = users.find((u) => u.name === spec.primaryApprover);
+  const employeeId = thirtyCasesOverrideEmployeeId != null
+    ? thirtyCasesOverrideEmployeeId
+    : (defaultEmployee ? defaultEmployee.id : null);
+  const primaryApproverId = thirtyCasesOverridePrimaryId != null
+    ? thirtyCasesOverridePrimaryId
+    : (defaultPrimary ? defaultPrimary.id : null);
+  return {
+    employeeId,
+    primaryApproverId,
+  };
+}
+
+// Build the reporting-line edge that overrides the seconded employee's primary
+// manager to the chosen primary approver, so the simulation routes leave through
+// that manager (and their own manager as the emergent second level).
+function thirtyCasesOverrideEdges(testCase) {
+  const spec = thirtyCasesOverrideSpec(testCase);
+  if (!spec) return [];
+  const users = thirtyCasesUsers();
+  const sel = thirtyCasesOverrideSelection(users, testCase);
+  if (!sel || sel.employeeId == null || sel.primaryApproverId == null) return [];
+  if (sel.employeeId === sel.primaryApproverId) return [];
+  return [{ user_id: sel.employeeId, manager_id: sel.primaryApproverId }];
+}
+
+// Build the illustrative default target line for an override case: the seconded
+// employee routes to the chosen primary approver, then up to that approver's own
+// manager (the second level that the routing engine derives automatically).
+function thirtyCasesOverrideActiveChain(users, testCase) {
+  const sel = thirtyCasesOverrideSelection(users, testCase);
+  if (!sel || sel.employeeId == null || sel.primaryApproverId == null) return null;
+  const employee = users.find((u) => u.id === sel.employeeId);
+  const primary = users.find((u) => u.id === sel.primaryApproverId);
+  if (!employee || !primary) return null;
+  const chain = [employee.name, primary.name];
+  const secondLevel = users.find((u) => u.name === primary.manager_name);
+  if (secondLevel) chain.push(secondLevel.name);
+  return [chain];
+}
+
+// Populate and show the override-case selectors, or hide them for any other
+// case. The employee selector lists the seconded employee's home-department
+// staff (the case focus department, excluding the dept head). The primary
+// selector lists the Layer 3 managers (level ranks 5-6) in the target
+// department, so the user picks who approves the secondment.
+function renderThirtyCasesOverrideControls(testCase) {
+  const wrap = document.getElementById("thirty-cases-override-controls");
+  const employeeSel = document.getElementById("thirty-cases-override-employee");
+  const primarySel = document.getElementById("thirty-cases-override-primary");
+  if (!wrap || !employeeSel || !primarySel) return;
+  const spec = thirtyCasesOverrideSpec(testCase);
+  if (!spec) {
+    wrap.classList.add("hidden");
+    return;
+  }
+  const users = thirtyCasesUsers();
+  const sel = thirtyCasesOverrideSelection(users, testCase) || {};
+  // Source (home) department of the seconded employee — exclude the dept head
+  // (top rank 4) so only employees are selectable.
+  const sourceDept = testCase.focusDept || null;
+  const employees = users.filter(
+    (u) =>
+      (!sourceDept || u.department_code === sourceDept) && u.level_rank > 4
+  );
+  const employeeCandidates = employees.length ? employees : users;
+  employeeSel.replaceChildren(
+    ...employeeCandidates.map((u) => {
+      const opt = document.createElement("option");
+      opt.value = String(u.id);
+      opt.textContent = `${u.name} — ${u.department_code} / ${u.level_name}`;
+      if (u.id === sel.employeeId) opt.selected = true;
+      return opt;
+    })
+  );
+  const dept = spec.targetDept || null;
+  const managers = users.filter(
+    (u) =>
+      (!dept || u.department_code === dept) &&
+      u.level_rank >= 5 &&
+      u.level_rank <= 6
+  );
+  const candidates = managers.length ? managers : users;
+  primarySel.replaceChildren(
+    ...candidates.map((u) => {
+      const opt = document.createElement("option");
+      opt.value = String(u.id);
+      opt.textContent = `${u.name} — ${u.department_code} / ${u.level_name}`;
+      if (u.id === sel.primaryApproverId) opt.selected = true;
+      return opt;
+    })
+  );
+  wrap.classList.remove("hidden");
+}
+
+// React to a change in either override selector: record the choices, re-bold
+// the default line, and re-run the simulation for any person currently clicked.
+function onThirtyCasesOverrideChange() {
+  const employeeSel = document.getElementById("thirty-cases-override-employee");
+  const primarySel = document.getElementById("thirty-cases-override-primary");
+  thirtyCasesOverrideEmployeeId =
+    employeeSel && employeeSel.value ? Number(employeeSel.value) : null;
+  thirtyCasesOverridePrimaryId =
+    primarySel && primarySel.value ? Number(primarySel.value) : null;
+  renderThirtyCasesDiagram();
+  if (thirtyCasesFocusOverride != null) {
+    runThirtyCasesSimulation(thirtyCasesFocusOverride);
+  } else {
+    updateThirtyCasesDetail();
+  }
+}
+
 async function runThirtyCasesSimulation(userId) {
   const tc = THIRTY_CASES.find((c) => c.id === thirtyCasesSelected);
   try {
@@ -2682,7 +2830,7 @@ async function runThirtyCasesSimulation(userId) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         requester_id: Number(userId),
-        edges: [],
+        edges: thirtyCasesOverrideEdges(tc),
         action_code: thirtyCasesAction(tc),
         request_at: (tc && tc.requestAt) || null,
         project_code: (tc && tc.projectCode) || null,
