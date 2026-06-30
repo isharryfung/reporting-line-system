@@ -123,6 +123,16 @@ def _seed_is_complete(session: Session) -> bool:
     )
     if itso_acting is None:
         return False
+    # A database seeded before Case #3 (Partial Acting) lacks the Performance
+    # Review action used to scope the performance-review coverage overlay, so its
+    # leave/review decoupling cannot be simulated. Treat that as stale too.
+    performance_review = (
+        session.query(Action.id)
+        .filter(Action.code == "performance_review")
+        .first()
+    )
+    if performance_review is None:
+        return False
     return True
 
 
@@ -1491,6 +1501,7 @@ HANDOVER_POLICIES = [
 def _build_overlay_object(
     overlay: dict[str, Any],
     requester: User,
+    session: Session | None = None,
 ):
     """Construct (but do not commit) an overlay assignment object from a spec."""
     overlay_type = str(overlay.get("type", "")).strip()
@@ -1511,10 +1522,23 @@ def _build_overlay_object(
         2099, 12, 31
     )
 
+    # An overlay may scope itself to a specific action either by numeric id or,
+    # more conveniently for callers that only know action codes (e.g. the Test
+    # Case Diagram), by ``action_code`` which is resolved against the session.
+    action_id = overlay.get("action_id")
+    action_code = overlay.get("action_code")
+    if action_id in (None, "") and action_code and session is not None:
+        action = (
+            session.query(Action).filter(Action.code == str(action_code)).first()
+        )
+        if action is None:
+            raise ValueError(f"Action {action_code!r} not found.")
+        action_id = action.id
+
     scope = {
         "dept_id": overlay.get("dept_id"),
         "org_unit_id": overlay.get("org_unit_id"),
-        "action_id": overlay.get("action_id"),
+        "action_id": action_id,
     }
     scope = {key: int(value) for key, value in scope.items() if value not in (None, "")}
 
@@ -1580,7 +1604,7 @@ def simulate_scenario_overlay(
 
         for overlay in overlays:
             try:
-                overlay_obj = _build_overlay_object(overlay, requester)
+                overlay_obj = _build_overlay_object(overlay, requester, session)
             except ValueError as exc:
                 return {"status": "error", "error": str(exc)}
             session.add(overlay_obj)
@@ -1805,6 +1829,27 @@ def simulate_reporting_line(
         session.close()
 
 
+def _overlay_applies_to_action(overlay: dict[str, Any], action: Action) -> bool:
+    """Return True if ``overlay`` can affect routing for ``action``.
+
+    An overlay may be scoped to a specific action by ``action_code`` or numeric
+    ``action_id``. The routing engine only applies an action-scoped overlay to
+    its own action, so an overlay scoped to a *different* action is irrelevant to
+    this simulation and is skipped (avoiding a needless, possibly failing, action
+    lookup when building it). Overlays with no action scope apply to every action.
+    """
+    code = overlay.get("action_code")
+    if code not in (None, ""):
+        return str(code) == action.code
+    action_id = overlay.get("action_id")
+    if action_id not in (None, ""):
+        try:
+            return int(action_id) == action.id
+        except (TypeError, ValueError):
+            return False
+    return True
+
+
 def _resolve_overlay_chain(
     session: Session,
     requester: User,
@@ -1819,6 +1864,14 @@ def _resolve_overlay_chain(
     runs :func:`build_approval_chain`, and returns the resolved approver steps
     with per-step ``source`` labels plus plain-language wording. Any failure is
     returned as ``overlay_error`` so the base reporting line still displays.
+
+    Only overlays relevant to the simulated action are built. The routing engine
+    filters overlays by action scope (an overlay scoped to action A never affects
+    action B's routing), so action-scoped overlays for a *different* action are
+    skipped here. This keeps action-decoupled cases such as Case #3 (Partial
+    Acting, where leave and performance-review covers are separate overlays) from
+    aborting the leave approver line just because a performance-review-scoped
+    overlay is in the payload.
     """
     action = session.query(Action).filter(Action.code == action_code).first()
     if action is None:
@@ -1826,7 +1879,9 @@ def _resolve_overlay_chain(
 
     try:
         for overlay in overlays:
-            session.add(_build_overlay_object(overlay, requester))
+            if not _overlay_applies_to_action(overlay, action):
+                continue
+            session.add(_build_overlay_object(overlay, requester, session))
         session.flush()
 
         chain = build_approval_chain(

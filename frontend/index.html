@@ -256,6 +256,37 @@
                 <p id="thirty-cases-scenario" class="testcase-wording">
                   Pick a case on the left to bold its target reporting line.
                 </p>
+                <div id="thirty-cases-peer-controls" class="thirty-cases-peer-controls hidden">
+                  <label>
+                    On leave (team lead)
+                    <select id="thirty-cases-peer-owner"></select>
+                  </label>
+                  <label>
+                    Peer cover (team lead)
+                    <select id="thirty-cases-peer-substitute"></select>
+                  </label>
+                </div>
+                <div id="thirty-cases-partial-controls" class="thirty-cases-peer-controls hidden">
+                  <label>
+                    On leave (manager)
+                    <select id="thirty-cases-partial-manager"></select>
+                  </label>
+                  <label>
+                    Covers leave approvals
+                    <select id="thirty-cases-partial-leave-cover"></select>
+                  </label>
+                  <label>
+                    Covers performance reviews
+                    <select id="thirty-cases-partial-review-cover"></select>
+                  </label>
+                  <label>
+                    Simulate workflow
+                    <select id="thirty-cases-partial-mode">
+                      <option value="leave">Leave approval</option>
+                      <option value="review">Performance review</option>
+                    </select>
+                  </label>
+                </div>
                 <p id="thirty-cases-method" class="hint"></p>
                 <ol id="thirty-cases-approvers" class="hidden"></ol>
               </div>
