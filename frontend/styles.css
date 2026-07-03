@@ -3,6 +3,15 @@
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background: #f5f7fb;
   color: #172033;
+  --workflow-primary: #4a7fcb;
+  --workflow-emphasis: #0c65d8;
+  --workflow-target: #e8a200;
+  --workflow-secondary: #7a3aa8;
+  --state-warning: #9a5200;
+  --state-temporary: #e48a1f;
+  --state-external: #2f7ea8;
+  --state-cohead: #0f766e;
+  --diagram-muted-opacity: 0.22;
 }
 
 * {
@@ -80,7 +89,7 @@ body {
   display: grid;
   gap: 1rem;
   margin: 0 auto;
-  max-width: 1400px;
+  max-width: 100%;
   padding: 1.5rem;
 }
 
@@ -299,6 +308,11 @@ th {
   position: relative;
 }
 
+/* Test Case Diagram uses a taller viewport so more levels are visible at once. */
+.diagram-container-tall {
+  min-height: 760px;
+}
+
 /* SVG node styles */
 .diagram-node {
   cursor: pointer;
@@ -325,7 +339,7 @@ th {
 }
 
 .diagram-node.selected rect {
-  stroke: #0c65d8;
+  stroke: var(--workflow-emphasis);
   stroke-width: 2.5;
   fill: #d0e5ff;
 }
@@ -355,12 +369,463 @@ th {
   fill: #a0bbdd;
 }
 
+.diagram-node rect.acting-head-outline {
+  stroke: var(--state-temporary);
+  stroke-dasharray: 6 4;
+  stroke-width: 2.5;
+}
+
+.diagram-node rect.acting-source-outline {
+  stroke: var(--state-temporary);
+  stroke-dasharray: 6 4;
+  stroke-width: 2.5;
+}
+
+.diagram-node rect.onleave-node-outline {
+  fill: #fff4e8;
+  stroke: #b45309;
+  stroke-dasharray: 5 3;
+  stroke-width: 2.6;
+}
+
+.diagram-node .acting-name-italic {
+  font-style: italic;
+}
+
+.acting-overlay-node rect {
+  fill: #fff6e9;
+  stroke: var(--state-temporary);
+  stroke-dasharray: 6 4;
+  stroke-width: 2.5;
+}
+
+.acting-overlay-name {
+  fill: var(--state-warning);
+  font-size: 12px;
+  font-style: italic;
+  font-weight: 700;
+  pointer-events: none;
+  text-anchor: middle;
+}
+
+.acting-overlay-role {
+  fill: var(--state-warning);
+  font-size: 10px;
+  pointer-events: none;
+  text-anchor: middle;
+}
+
+.acting-overlay-edge {
+  fill: none;
+  stroke: var(--state-temporary);
+  stroke-dasharray: 6 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.acting-overlay-edge-emphasis {
+  stroke-width: 4;
+}
+
+.diagram-node .onleave-tag,
+.diagram-node .duty-leave-tag,
+.diagram-node .duty-review-tag,
+.diagram-node .itso-case-tag,
+.diagram-node .itso-note-tag,
+.diagram-node .itso-warning-tag {
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  paint-order: stroke;
+  stroke: rgb(255 255 255 / 95%);
+  stroke-width: 2px;
+}
+
+.diagram-node .onleave-tag {
+  fill: #8b3f00;
+}
+
+.diagram-node .duty-leave-tag {
+  fill: #0b5fcc;
+}
+
+.diagram-node .duty-review-tag {
+  fill: #6a2fa3;
+}
+
+.diagram-node .itso-case-tag {
+  fill: #0f6f8a;
+}
+
+.diagram-node .itso-note-tag {
+  fill: #1e40af;
+}
+
+.diagram-node .itso-warning-tag {
+  fill: #b91c1c;
+}
+
+.diagram-node rect.vacant-node-outline {
+  stroke: #6b7280;
+  stroke-dasharray: 4 3;
+  stroke-width: 2.5;
+}
+
+.diagram-node rect.cohead-node-outline {
+  stroke: var(--state-cohead);
+  stroke-dasharray: 5 3;
+  stroke-width: 2.5;
+}
+
+.diagram-node rect.itso-inactive-outline {
+  fill: #f1f5f9;
+  stroke: #64748b;
+  stroke-dasharray: 3 3;
+  stroke-width: 2.3;
+}
+
+.diagram-node rect.loan-home-ghost-outline {
+  fill: #e5e7eb;
+  stroke: #6b7280;
+  stroke-dasharray: 5 3;
+  stroke-width: 2.3;
+}
+
+.external-region-box {
+  fill: #edf8ff;
+  stroke: var(--state-external);
+  stroke-dasharray: 5 4;
+  stroke-width: 2;
+}
+
+.external-region-title {
+  fill: var(--state-external);
+  font-size: 10px;
+  font-style: italic;
+  font-weight: 700;
+  pointer-events: none;
+  text-anchor: middle;
+}
+
+.external-copy-rect {
+  fill: #e8f0fe;
+  stroke: var(--state-external);
+  stroke-width: 1.8;
+}
+
+.external-copy-name {
+  fill: var(--state-external);
+  font-size: 12px;
+  font-weight: 700;
+  pointer-events: none;
+  text-anchor: middle;
+}
+
+.external-copy-level {
+  fill: #456f8f;
+  font-size: 10px;
+  pointer-events: none;
+  text-anchor: middle;
+}
+
+.external-overlay-edge {
+  fill: none;
+  stroke: #1e6fa0;
+  stroke-dasharray: 1 6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.delegation-process-edge {
+  fill: none;
+  stroke: #9ca3af;
+  stroke-dasharray: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.2;
+}
+
+.delegation-process-dot {
+  fill: #9ca3af;
+}
+
+.delegation-process-label {
+  fill: #4b5563;
+  font-size: 10px;
+  font-style: italic;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.itso-context-edge {
+  fill: none;
+  stroke: #0f766e;
+  stroke-dasharray: 1 6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.itso-context-label {
+  fill: #115e59;
+  font-size: 9px;
+  font-style: italic;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.itso-cohead-bridge {
+  fill: none;
+  stroke: var(--state-temporary);
+  stroke-dasharray: 6 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.itso-cohead-label {
+  fill: #0f6f8a;
+  font-size: 9px;
+  font-style: italic;
+  font-weight: 600;
+  pointer-events: none;
+  text-anchor: middle;
+}
+
+.diagram-edge.itso-cohead-branch {
+  stroke-dasharray: 6 4;
+  stroke-width: 1.8;
+  opacity: 0.9;
+}
+
+.target-edge.itso-case9-target-edge {
+  stroke-dasharray: none;
+  stroke-width: 3.4;
+}
+
+.itso-cycle-rejected-edge {
+  fill: none;
+  stroke: #dc2626;
+  stroke-dasharray: 6 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.2;
+}
+
+.itso-cycle-rejected-label {
+  fill: #b91c1c;
+  font-size: 9px;
+  font-style: italic;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.itso-cycle-block {
+  stroke: #b91c1c;
+  stroke-linecap: round;
+  stroke-width: 2.2;
+}
+
+.itso-cycle-badge {
+  fill: #fef2f2;
+  stroke: #dc2626;
+  stroke-dasharray: none;
+  stroke-width: 1.8;
+}
+
+.itso-cycle-badge-text {
+  fill: #b91c1c;
+  font-size: 10px;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.itso-flat-edge {
+  fill: none;
+  stroke: var(--state-temporary);
+  stroke-dasharray: 6 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.6;
+  opacity: 0.85;
+}
+
+.diagram-node rect.itso-parked-node-outline {
+  fill: #f8fafc;
+  stroke: #7c8aa0;
+  stroke-dasharray: 3 3;
+  stroke-width: 2.2;
+}
+
+.diagram-node rect.itso-central-approver-outline {
+  stroke: #0f6f8a;
+  stroke-width: 2.6;
+}
+
+.itso-parking-central-edge {
+  fill: none;
+  stroke: #0f6f8a;
+  stroke-width: 3.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.itso-parking-badge {
+  fill: #f0f9ff;
+  stroke: #0f6f8a;
+  stroke-dasharray: 4 3;
+  stroke-width: 1.8;
+}
+
+.itso-parking-badge-text {
+  fill: #0b4f63;
+  font-size: 10px;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.itso-external-region-box {
+  fill: #eef9ff;
+  stroke: #2f7ea8;
+  stroke-dasharray: 5 4;
+  stroke-width: 2;
+}
+
+.itso-external-region-title {
+  fill: #1f5f82;
+  font-size: 10px;
+  font-style: italic;
+  font-weight: 700;
+  pointer-events: none;
+  text-anchor: middle;
+}
+
+.itso-external-node-rect {
+  fill: #f7fcff;
+  stroke: #2f7ea8;
+  stroke-width: 1.8;
+}
+
+.itso-external-node-name {
+  fill: #1f5f82;
+  font-size: 12px;
+  font-weight: 700;
+  pointer-events: none;
+  text-anchor: middle;
+}
+
+.itso-external-node-role {
+  fill: #4d7392;
+  font-size: 10px;
+  pointer-events: none;
+  text-anchor: middle;
+}
+
+.itso-external-link {
+  fill: none;
+  stroke: #2f7ea8;
+  stroke-dasharray: 1 6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.itso-external-link-label {
+  fill: #1f5f82;
+  font-size: 9px;
+  font-style: italic;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.diagram-node rect.itso-jobshare-holder-outline {
+  stroke: #0f766e;
+  stroke-width: 2.1;
+}
+
+.itso-jobshare-box {
+  fill: #f3fbf8;
+  stroke: #0f766e;
+  stroke-dasharray: 4 3;
+  stroke-width: 1.5;
+}
+
+.itso-jobshare-title {
+  fill: #0f766e;
+  font-size: 11px;
+  font-weight: 700;
+  pointer-events: none;
+  text-anchor: middle;
+}
+
+.itso-jobshare-sub {
+  fill: #115e59;
+  font-size: 9px;
+  font-style: italic;
+  font-weight: 600;
+  pointer-events: none;
+  text-anchor: middle;
+}
+
+.itso-jobshare-link,
+.itso-jobshare-manager-link {
+  fill: none;
+  stroke: #0f766e;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.itso-jobshare-link {
+  stroke-dasharray: 4 3;
+  stroke-width: 1.5;
+}
+
+.itso-jobshare-manager-link {
+  stroke-dasharray: 3 3;
+  stroke-width: 1.4;
+  opacity: 0.75;
+}
+
+.itso-jobshare-label {
+  fill: #115e59;
+  font-size: 9px;
+  font-style: italic;
+  font-weight: 600;
+  pointer-events: none;
+}
+
 .diagram-edge {
   fill: none;
-  stroke: #4a7fcb; /* fallback; per-edge stroke is set inline by rank color */
+  stroke: var(--workflow-primary); /* fallback; per-edge stroke is set inline by rank color */
   stroke-width: 1.5;
   stroke-linejoin: round;
   stroke-linecap: round;
+}
+
+/* Keep dense HRO L9 lanes readable against adjacent L8 node boxes. */
+.diagram-edge.hro-l9-edge {
+  stroke-width: 2.3;
+}
+
+.diagram-node.muted,
+.diagram-edge.muted {
+  opacity: var(--diagram-muted-opacity);
+}
+
+.diagram-edge.hro-l9-edge.muted {
+  opacity: 0.55;
+}
+
+.diagram-node.muted.onleave-emphasis {
+  opacity: 1;
+}
+
+.diagram-node.itso-locked-node {
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 /* Reporting line of the currently selected user is emphasised (bold). */
@@ -373,11 +838,43 @@ th {
    edge in the base org chart. */
 .target-edge {
   fill: none;
-  stroke: #e8a200;
+  stroke: var(--workflow-target);
   stroke-width: 4;
-  stroke-dasharray: 8 5;
+  stroke-dasharray: none;
   stroke-linejoin: round;
   stroke-linecap: round;
+}
+
+.itso-case20-counterfactual-edge {
+  stroke: #c47018;
+  stroke-dasharray: 8 6;
+  stroke-width: 3;
+  opacity: 0.95;
+}
+
+.itso-case20-controls {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid #d7deea;
+  border-radius: 8px;
+  background: #f8fbff;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.itso-case20-controls-title {
+  font-weight: 600;
+  color: #2f4c73;
+}
+
+.itso-case20-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #2e3e55;
 }
 
 .level-band {
@@ -421,6 +918,22 @@ th {
   fill: none;
   stroke: #c7d4e6;
   stroke-dasharray: 3 5;
+  stroke-width: 1;
+}
+
+.team-label {
+  fill: #5a6f8a;
+  font-family: inherit;
+  font-size: 10px;
+  font-style: italic;
+  font-weight: 600;
+  text-anchor: middle;
+}
+
+.team-separator {
+  fill: none;
+  stroke: #d4dde8;
+  stroke-dasharray: 2 5;
   stroke-width: 1;
 }
 
@@ -651,6 +1164,11 @@ th {
   min-width: 0;
 }
 
+.thirty-cases-sidebar {
+  display: flex;
+  flex-direction: column;
+}
+
 .thirty-cases-list {
   max-height: 600px;
   overflow-y: auto;
@@ -683,6 +1201,21 @@ th {
   font-size: 0.9rem;
 }
 
+.itso-cases-review-nav {
+  align-items: center;
+  display: flex;
+  gap: 0.4rem;
+  margin: 0.35rem 0 0.5rem;
+}
+
+.itso-cases-position {
+  color: #5a6c84;
+  font-size: 0.82rem;
+  font-weight: 600;
+  min-width: 7.5rem;
+  text-align: center;
+}
+
 .thirty-cases-peer-controls {
   display: flex;
   flex-wrap: wrap;
@@ -710,6 +1243,94 @@ th {
   font-size: 0.9rem;
 }
 
+.thirty-cases-legend {
+  background: #f8fbff;
+  border: 1px solid #d8e2f0;
+  border-radius: 10px;
+  margin: 0.7rem 0 0.5rem;
+  padding: 0.7rem 0.85rem;
+}
+
+.thirty-cases-legend h4 {
+  font-size: 0.9rem;
+  margin: 0 0 0.45rem;
+}
+
+.thirty-cases-legend ul {
+  display: grid;
+  gap: 0.4rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.thirty-cases-legend li {
+  align-items: center;
+  color: #3f5068;
+  display: flex;
+  font-size: 0.82rem;
+  gap: 0.5rem;
+}
+
+.legend-line {
+  border-top: 2px solid #4a7fcb;
+  display: inline-block;
+  flex: 0 0 28px;
+  height: 0;
+  width: 28px;
+}
+
+.legend-line-solid {
+  border-top-style: solid;
+}
+
+.legend-line-dotted {
+  border-top-style: dotted;
+}
+
+.legend-line-dashed {
+  border-top-style: dashed;
+}
+
+.legend-line-delegation {
+  border-top-color: #8b97a9;
+  border-top-style: solid;
+  border-top-width: 1px;
+}
+
+.legend-badge-invalid {
+  align-items: center;
+  background: #b91c1c;
+  border-radius: 999px;
+  color: #ffffff;
+  display: inline-flex;
+  flex: 0 0 18px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  height: 18px;
+  justify-content: center;
+  line-height: 1;
+  width: 18px;
+}
+
+.legend-node-cohead {
+  border: 2px dashed var(--state-cohead);
+}
+
+.legend-tag {
+  border-radius: 8px;
+  font-size: 0.72rem;
+  font-style: italic;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0.2rem 0.35rem;
+}
+
+.legend-tag-onleave {
+  background: #fff6e9;
+  color: var(--state-warning);
+}
+
 .thirty-case-row {
   display: flex;
   gap: 0.5rem;
@@ -724,13 +1345,95 @@ th {
 }
 
 .thirty-case-row span {
+  align-items: flex-start;
   display: flex;
   flex-direction: column;
 }
 
 .thirty-case-cat {
-  color: #6a7a90;
+  align-items: flex-start;
+  color: #315173;
+  display: flex;
   font-size: 0.8rem;
+  gap: 0.45rem;
+  justify-content: flex-start;
+  margin-top: 0.1rem;
+  text-align: left;
+}
+
+.thirty-case-cat-name {
+  color: #2f4c73;
+  font-weight: 600;
+}
+
+.thirty-case-level {
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  padding: 0.06rem 0.45rem;
+}
+
+.thirty-case-level.minor {
+  background: #e8f7ef;
+  border: 1px solid #9dd6b2;
+  color: #12653f;
+}
+
+.thirty-case-level.major {
+  background: #fff2e8;
+  border: 1px solid #efb98d;
+  color: #a24e16;
+}
+
+.thirty-case-level.unclear {
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  color: #4b5563;
+}
+
+.itso-case-meta {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.itso-case-intention {
+  color: #3f536f;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.itso-intention-section {
+  background: #f7fbff;
+}
+
+.itso-intention-detail {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 500;
+  margin-top: 0.2rem;
+  opacity: 0.95;
+}
+
+.itso-intention-banner.minor {
+  background: #e8f7ef;
+  border-color: #9dd6b2;
+  color: #12653f;
+}
+
+.itso-intention-banner.major {
+  background: #fff2e8;
+  border-color: #efb98d;
+  color: #a24e16;
+}
+
+.itso-intention-banner.unclear {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+  color: #4b5563;
 }
 
 @media (max-width: 800px) {
@@ -787,6 +1490,138 @@ th {
   font-size: 1.05rem;
   line-height: 1.5;
   margin: 0;
+}
+
+.thirty-cases-alt-desc {
+  color: #5f6f86;
+  display: block;
+  font-size: 0.95rem;
+  font-style: italic;
+  margin-top: 0.35rem;
+}
+
+.itso-case-main {
+  color: #1f3554;
+  font-size: 0.98rem;
+  line-height: 1.55;
+  margin: 0;
+}
+
+.itso-note-grid {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.55rem;
+}
+
+.itso-note-card {
+  background: #ffffff;
+  border: 1px solid #d9e4f2;
+  border-radius: 9px;
+  padding: 0.5rem 0.6rem;
+}
+
+.itso-note-title {
+  color: #2d4f7f;
+  display: inline-block;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  margin: 0 0 0.2rem;
+  text-transform: uppercase;
+}
+
+.itso-note-card p {
+  color: #3f536f;
+  margin: 0;
+}
+
+.itso-just-points {
+  display: grid;
+  gap: 0.45rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.itso-just-points li {
+  background: #ffffff;
+  border: 1px solid #d6e2f2;
+  border-radius: 9px;
+  padding: 0.45rem 0.55rem;
+}
+
+.itso-just-points li span {
+  color: #2f4c73;
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  margin-bottom: 0.2rem;
+}
+
+.itso-just-points li p {
+  color: #415975;
+  margin: 0;
+}
+
+.itso-desc-section {
+  background: #f8fbff;
+  border: 1px solid #d8e2f0;
+  border-radius: 10px;
+  margin-top: 0.75rem;
+  padding: 0.75rem 0.85rem;
+}
+
+.itso-desc-section h4 {
+  color: #2f4c73;
+  font-size: 0.92rem;
+  letter-spacing: 0.02em;
+  margin: 0 0 0.35rem;
+  text-transform: uppercase;
+}
+
+.itso-desc-section p {
+  margin: 0.25rem 0;
+}
+
+.itso-description-section {
+  background: linear-gradient(180deg, #f8fbff 0%, #f5f9ff 100%);
+}
+
+.itso-route-section {
+  background: #f6faff;
+}
+
+.itso-route-summary {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.45rem;
+}
+
+.itso-route-card {
+  background: #ffffff;
+  border: 1px solid #d6e2f2;
+  border-radius: 9px;
+  padding: 0.5rem 0.6rem;
+}
+
+.itso-route-card p {
+  color: #3f536f;
+  margin: 0.1rem 0 0;
+}
+
+.itso-justification-section {
+  background: #f3f8ff;
+}
+
+.itso-quality-goals {
+  color: #466089;
+  margin: 0.2rem 0 0.1rem 1.1rem;
+  padding: 0;
+}
+
+.itso-quality-goals li {
+  margin: 0.18rem 0;
 }
 
 .testcase-wording.testcase-error {

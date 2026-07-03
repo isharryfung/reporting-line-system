@@ -3,6 +3,7 @@ import pytest
 from src.manual_test_app import (
     ADVANCED_SCENARIOS,
     BUSINESS_CASES,
+    ManualTestRequestHandler,
     _reset_database,
     api_create_action,
     api_create_department,

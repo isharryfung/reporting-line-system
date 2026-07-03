@@ -24,7 +24,7 @@
       <button class="tab-btn active" data-tab="overview">Overview</button>
       <button class="tab-btn" data-tab="diagram">Diagram Editor</button>
       <button class="tab-btn" data-tab="testcase-diagram">Test Case Diagram</button>
-      <button class="tab-btn" data-tab="thirty-cases">30 Testcase Diagram</button>
+      <button class="tab-btn" data-tab="itso-cases">ITSO 30 Cases</button>
       <button class="tab-btn" data-tab="seed-editor">Seed Data Editor</button>
       <button class="tab-btn" data-tab="simulation">Simulation</button>
       <button class="tab-btn" data-tab="scenario-lab">Scenario Lab</button>
@@ -151,8 +151,8 @@
             </div>
           </div>
           <div class="diagram-workspace">
-            <div class="diagram-container">
-              <svg id="testcase-svg" width="100%" height="540"></svg>
+            <div class="diagram-container diagram-container-tall">
+              <svg id="testcase-svg" width="100%" height="760"></svg>
             </div>
           </div>
 
@@ -223,72 +223,92 @@
         </section>
       </div>
 
-      <!-- ===== 30 TESTCASE DIAGRAM TAB ===== -->
-      <div id="tab-thirty-cases" class="tab-content hidden">
+      <!-- ===== ITSO 30 CASES TAB ===== -->
+      <div id="tab-itso-cases" class="tab-content hidden">
         <section class="card">
           <div class="diagram-header">
-            <h2>30 Testcase Diagram</h2>
+            <h2>ITSO 30 Cases (Case 1-30)</h2>
             <p class="hint">
-              Choose a test case on the left to see its <strong>target reporting
-              line</strong> highlighted (bold) on the EXEC, ITSO &amp; HRO diagram on
-              the right. The cases cover acting &amp; coverage, matrix &amp; dual
-              reporting, hierarchy anomalies, temporal &amp; effective dating,
-              special entities, and the Layer 1 corporate tier. Nothing here is saved.
+              This tab mirrors Cases 1-30 as <strong>ITSO-only</strong> scenarios.
+              Department structure is adjusted per case to better reflect the scenario
+              intent while staying in ITSO. Nothing here is saved.
             </p>
           </div>
           <div class="thirty-cases-workspace">
-            <aside class="thirty-cases-list">
-              <label class="thirty-cases-filter">
-                Category
-                <select id="thirty-cases-filter">
-                  <option value="">All categories</option>
-                </select>
-              </label>
-              <p class="hint thirty-cases-focus-hint">Click a case to see its default answer; click a person to simulate who actually approves for them in this case.</p>
-              <ul id="thirty-cases-cases"></ul>
+            <aside class="thirty-cases-sidebar">
+              <div class="thirty-cases-list">
+                <label class="thirty-cases-filter">
+                  Category
+                  <select id="itso-cases-filter">
+                    <option value="">All categories</option>
+                  </select>
+                </label>
+                <div class="itso-cases-review-nav">
+                  <button type="button" id="itso-cases-prev" class="btn-secondary btn-small">Previous</button>
+                  <span id="itso-cases-position" class="itso-cases-position">Case 0 of 0</span>
+                  <button type="button" id="itso-cases-next" class="btn-secondary btn-small">Next</button>
+                </div>
+                <p class="hint thirty-cases-focus-hint">Click a case to see its ITSO target route; click a person to inspect their current upward chain.</p>
+                <ul id="itso-cases-cases"></ul>
+              </div>
+              <div class="thirty-cases-legend itso-cases-legend" aria-label="ITSO legend">
+                <h4>Legend</h4>
+                <ul>
+                  <li>
+                    <span class="legend-line legend-line-solid"></span>
+                    <span><strong>Solid line</strong> - Primary administrative manager - Normal reporting, payroll, leave, performance default</span>
+                  </li>
+                  <li>
+                    <span class="legend-line legend-line-dotted"></span>
+                    <span><strong>Dotted line</strong> - Functional / project manager - Matrix reporting, tech lead, global head</span>
+                  </li>
+                  <li>
+                    <span class="legend-line legend-line-dashed"></span>
+                    <span><strong>Dashed line</strong> - Temporary acting / coverage relationship - Acting head, maternity coverage, handover</span>
+                  </li>
+                  <li>
+                    <span class="legend-line legend-line-delegation"></span>
+                    <span><strong>Thin grey line</strong> - Delegation only - Executive assistant approval delegation</span>
+                  </li>
+                  <li>
+                    <span class="legend-badge-invalid">!</span>
+                    <span><strong>Red warning badge</strong> - Invalid / blocked relationship - Terminated approver, circular reporting, inactive approver</span>
+                  </li>
+                </ul>
+              </div>
             </aside>
             <div class="thirty-cases-diagram">
               <div class="diagram-container">
-                <svg id="thirty-cases-svg" width="100%" height="540"></svg>
+                <svg id="itso-cases-svg" width="100%" height="540"></svg>
               </div>
-              <div id="thirty-cases-detail" class="testcase-result">
-                <h3 id="thirty-cases-title">Select a test case</h3>
-                <p id="thirty-cases-scenario" class="testcase-wording">
-                  Pick a case on the left to bold its target reporting line.
-                </p>
-                <div id="thirty-cases-peer-controls" class="thirty-cases-peer-controls hidden">
-                  <label>
-                    On leave (team lead)
-                    <select id="thirty-cases-peer-owner"></select>
-                  </label>
-                  <label>
-                    Peer cover (team lead)
-                    <select id="thirty-cases-peer-substitute"></select>
-                  </label>
+              <div id="itso-cases-detail" class="testcase-result">
+                <h3 id="itso-cases-title">Select an ITSO case</h3>
+                <div id="itso-cases-scenario" class="testcase-wording">
+                  Pick a case on the left to bold its ITSO-only target reporting line.
                 </div>
-                <div id="thirty-cases-partial-controls" class="thirty-cases-peer-controls hidden">
+                <div id="itso-cases-partial-controls" class="thirty-cases-peer-controls hidden">
                   <label>
-                    On leave (manager)
-                    <select id="thirty-cases-partial-manager"></select>
+                    <span id="itso-cases-partial-manager-label">On leave</span>
+                    <select id="itso-cases-partial-manager"></select>
                   </label>
                   <label>
-                    Covers leave approvals
-                    <select id="thirty-cases-partial-leave-cover"></select>
+                    <span id="itso-cases-partial-leave-label">Leave duty cover</span>
+                    <select id="itso-cases-partial-leave-cover"></select>
                   </label>
                   <label>
-                    Covers performance reviews
-                    <select id="thirty-cases-partial-review-cover"></select>
+                    <span id="itso-cases-partial-review-label">Review duty cover</span>
+                    <select id="itso-cases-partial-review-cover"></select>
                   </label>
                   <label>
-                    Simulate workflow
-                    <select id="thirty-cases-partial-mode">
-                      <option value="leave">Leave approval</option>
-                      <option value="review">Performance review</option>
+                    View
+                    <select id="itso-cases-partial-mode">
+                      <option value="leave">Leave duty</option>
+                      <option value="review">Review duty</option>
                     </select>
                   </label>
+                  <p class="hint thirty-cases-focus-hint">Eligible people for this case: ITSO L4, L5, L6, and L7 only.</p>
                 </div>
-                <p id="thirty-cases-method" class="hint"></p>
-                <ol id="thirty-cases-approvers" class="hidden"></ol>
+                <div id="itso-cases-method" class="hint itso-route-summary"></div>
               </div>
             </div>
           </div>

@@ -2266,8 +2266,8 @@ class ManualTestRequestHandler(BaseHTTPRequestHandler):
         raw_body = self.rfile.read(length) if length > 0 else b"{}"
         return json.loads(raw_body.decode("utf-8"))
 
-    def _send_static(self, filename: str, content_type: str) -> None:
-        file_path = FRONTEND_DIR / filename
+    def _send_static(self, filename: str, content_type: str, base_dir: Path = FRONTEND_DIR) -> None:
+        file_path = base_dir / filename
         if not file_path.is_file():
             self._send_json({"error": "File not found"}, status=404)
             return
