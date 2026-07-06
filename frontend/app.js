@@ -2585,8 +2585,8 @@ const THIRTY_CASES = [
   { id: 4, category: "Acting & Coverage", title: "Dummy Head", focus: "Hannah", focusDept: "HRO", scenario: "A new department lacks a head, so a neighboring head is temporarily assigned.", method: "Assign the neighboring department head to the new department's Head job position.", target: [["Hannah", "Ivan"]] },
   { id: 5, category: "Acting & Coverage", title: "Self-Approval", focus: "Ingrid", focusDept: "ITSO", scenario: "A manager acting in their own supervisor's role routes their leave back to themselves.", method: "Safeguard: if Submitter == Approver, roll up to next level or route to HR.", target: [["Ingrid", "Ivan"]] },
   { id: 6, category: "Acting & Coverage", title: "Handover Overlap", focus: "Isaac", focusDept: "ITSO", scenario: "Old and new managers occupy the same Head position during a 2-week overlap.", method: "Support over-hiring; HR specifies who holds approval authority during transition.", target: [["Isaac", "Ingrid", "Ivan"]] },
-  { id: 7, category: "Matrix & Dual Reporting", title: "Cross-Department Project", focus: "Boris", focusDept: "ITSO", scenario: "An IT employee is seconded 100% to HR for a six-month project.", method: "Keep IT job position for payroll; add Override_Reports_To to the HR Project Manager for leave approval.", target: [["Boris", "Hannah"]] },
-  { id: 8, category: "Matrix & Dual Reporting", title: "Split Allocation", focus: "Bruno", focusDept: "ITSO", scenario: "A professor spends 50% in two schools.", method: "Create two job assignments and define which is the main approval line.", target: [["Bruno", "Ingrid", "Ivan"], ["Bruno", "Harvey", "Ivan"]] },
+  { id: 7, category: "Matrix & Dual Reporting", title: "Cross-Department Project", focus: "Boris", focusDept: "ITSO", scenario: "An IT employee (Boris) is seconded 100% to HR for a six-month project, so their leave is approved by their HR project manager (Hazel) then her own manager (Harvey).", method: "Keep IT job position for payroll; add Override_Reports_To to an HR manager so leave routes to the chosen primary approver (Hazel) then her manager as second level (Harvey).", action: "annual_leave", override: { employee: "Boris", primaryApprover: "Hazel", targetDept: "HRO" } },
+  { id: 8, category: "Matrix & Dual Reporting", title: "Split Allocation", focus: "Bruno", focusDept: "ITSO", scenario: "A professor spends 50% in two schools.", method: "Create two job assignments and define which is the main approval line.", target: [["Bruno", "Ingrid", "Ivan"]] },
   { id: 9, category: "Matrix & Dual Reporting", title: "Co-Heads", focus: "Cara", focusDept: "ITSO", scenario: "A team has two equal Co-Directors.", method: "Link the Org Unit to multiple Co-Head positions; workflow is Any-One-Approve.", target: [["Cara", "Ivan"], ["Cara", "Ingrid"]] },
   { id: 10, category: "Matrix & Dual Reporting", title: "Executive Assistant Delegation", focus: "Ivan", focusDept: "ITSO", scenario: "An executive never logs in; their EA handles all approvals.", method: "Delegation module: executive delegates authority to the EA; audit log records on-behalf-of.", target: [["Isaac", "Ivan"]] },
   { id: 11, category: "Matrix & Dual Reporting", title: "Tech Lead vs People Manager", focus: "Dana", focusDept: "ITSO", scenario: "Tech lead manages work; another manager handles people matters.", method: "Tech Lead/Dotted-line for projects; People Manager as solid-line manager.", target: [["Dana", "Cara", "Ivan"]] },
@@ -3167,6 +3167,12 @@ let thirtyCasesPartialManagerId = null;
 let thirtyCasesPartialLeaveCoverId = null;
 let thirtyCasesPartialReviewCoverId = null;
 let thirtyCasesPartialMode = "leave";
+// For override / secondment cases (e.g. Case #7) the user can choose which IT
+// employee is seconded and which manager is their primary approver; the second
+// level then emerges from that manager's own reporting line. null = use case
+// defaults. Non-persistent.
+let thirtyCasesOverrideEmployeeId = null;
+let thirtyCasesOverridePrimaryId = null;
 
 function thirtyCasesUsers() {
   const users = [];
@@ -3329,6 +3335,14 @@ function initThirtyCases() {
       const el = document.getElementById(id);
       if (el) el.addEventListener("change", onThirtyCasesPartialChange);
     });
+    const overrideEmployeeSel = document.getElementById("thirty-cases-override-employee");
+    if (overrideEmployeeSel) {
+      overrideEmployeeSel.addEventListener("change", onThirtyCasesOverrideChange);
+    }
+    const overridePrimarySel = document.getElementById("thirty-cases-override-primary");
+    if (overridePrimarySel) {
+      overridePrimarySel.addEventListener("change", onThirtyCasesOverrideChange);
+    }
     thirtyCasesReady = true;
   }
   renderThirtyCasesDiagram();
@@ -3412,8 +3426,88 @@ function renderThirtyCasesDiagram() {
     ? (thirtyCasesSimChain || thirtyCasesFocusChain(users, thirtyCasesFocusOverride))
     : thirtyCasesTargetChain(users, tc);
   highlightTargetLine(svg, users, chains);
-  if (tc && tc.id === 1) {
-    rerouteCaseOneHighlightedPathViaActing(svg, users, chains);
+}
+
+// Resolve a case's default target line from the live org chart. Cases whose
+// target is an empty list are intentionally inactive (no workflow), so they
+// stay unbolded; every other case bolds the focus member's real reporting
+// chain — the same logic used when a node is clicked.
+function thirtyCasesTargetChain(users, testCase) {
+  if (!testCase || (testCase.target && testCase.target.length === 0)) return null;
+  // Peer-coverage cases derive their target line from the chosen on-leave /
+  // covering team leads so changing the selectors re-bolds the handoff line.
+  const peerChain = thirtyCasesPeerActiveChain(users, testCase);
+  if (peerChain) return peerChain;
+  // Partial-acting cases derive their target line from the chosen on-leave
+  // manager, the active cover (leave vs review), and the default second level.
+  const partialChain = thirtyCasesPartialActiveChain(users, testCase);
+  if (partialChain) return partialChain;
+  // Override / secondment cases (e.g. Case #7) derive their target line from the
+  // seconded employee, the chosen primary approver, and that approver's own
+  // manager (the emergent second level).
+  const overrideChain = thirtyCasesOverrideActiveChain(users, testCase);
+  if (overrideChain) return overrideChain;
+  // Bold each case's explicit, scenario-specific target line(s) so overlay,
+  // override, skip-level and co-head cases highlight the documented approver
+  // chain rather than the focus member's plain primary line.
+  if (testCase.target && testCase.target.length) return testCase.target;
+  return thirtyCasesFocusChain(users, thirtyCasesFocusId(users, testCase));
+}
+
+// Update the detail panel text to reflect the case default or chosen focus line.
+function updateThirtyCasesDetail(simResult) {
+  const tc = THIRTY_CASES.find((c) => c.id === thirtyCasesSelected);
+  if (!tc) return;
+  document.getElementById("thirty-cases-title").textContent = `${tc.id}. ${tc.title} — ${tc.category}`;
+  document.getElementById("thirty-cases-scenario").textContent =
+    tc.note ? `${tc.scenario}  ${tc.note}` : tc.scenario;
+  const approversEl = document.getElementById("thirty-cases-approvers");
+  if (approversEl) {
+    approversEl.replaceChildren();
+    approversEl.classList.add("hidden");
+  }
+  let line;
+  if (thirtyCasesFocusOverride != null) {
+    const users = thirtyCasesUsers();
+    const person = users.find((u) => u.id === thirtyCasesFocusOverride);
+    const who = person ? person.name : "?";
+    if (simResult && (simResult.overlay_steps || []).length) {
+      // Real routing answer for this person in this case.
+      const steps = simResult.overlay_steps;
+      line = `Approver line for ${who} → ` +
+        steps
+          .map(
+            (s) =>
+              `${s.approver} [${s.source}]` +
+              (s.acting_approver ? ` (${s.acting_approver} acting)` : "")
+          )
+          .join(" → ");
+      if (approversEl) {
+        approversEl.classList.remove("hidden");
+        steps.forEach((s) => {
+          const li = document.createElement("li");
+          li.textContent = `${s.approver} — ${s.source}` +
+            (s.acting_approver ? ` (${s.acting_approver} acting)` : "") +
+            (s.alternate_approvers && s.alternate_approvers.length
+              ? ` (or ${s.alternate_approvers.join(", ")})`
+              : "");
+          approversEl.appendChild(li);
+        });
+      }
+    } else if (simResult && simResult.overlay_error) {
+      line = `Approver line: ${simResult.overlay_error}`;
+    } else {
+      const chain = thirtyCasesFocusChain(users, thirtyCasesFocusOverride);
+      line = chain
+        ? `Resolving approvers for ${who}…  Reporting line: ${chain.map((c) => c.join(" → ")).join("  •  ")}`
+        : `${who} — top of chain, no manager.`;
+    }
+  } else {
+    const users = thirtyCasesUsers();
+    const chain = thirtyCasesTargetChain(users, tc);
+    line = chain
+      ? "Target line: " + chain.map((c) => c.join(" → ")).join("  •  ")
+      : "Target line: none — assignment inactive, workflow suspended.";
   }
   // When a case is selected, fade unrelated nodes/edges so the scenario path
   // is easier to scan without changing the underlying structure.
@@ -3457,26 +3551,27 @@ function dimThirtyCasesContext(svg, users, chains) {
   });
 }
 
-function isolateItsoCase10Actors(svg, users) {
-  if (!svg) return;
-  const isaac = users.find((u) => u.name === "Isaac" && u.department_code === "ITSO");
-  const ivan = users.find((u) => u.name === "Ivan" && u.department_code === "ITSO");
-  if (!isaac || !ivan) return;
-  const keep = new Set([String(isaac.id), String(ivan.id)]);
-
-  svg.querySelectorAll(".diagram-node").forEach((node) => {
-    const id = String(node.dataset.userId || "");
-    if (!keep.has(id)) {
-      node.classList.add("muted");
-    }
-  });
-
-  svg.querySelectorAll(".diagram-edge").forEach((edge) => {
-    const childId = String(edge.dataset.childId || "");
-    const parentId = String(edge.dataset.parentId || "");
-    const keepEdge = keep.has(childId) && keep.has(parentId);
-    if (!keepEdge) edge.classList.add("muted");
-  });
+function selectThirtyCase(id) {
+  thirtyCasesSelected = id;
+  // Reset any manual focus override so the case's hardcoded target shows first.
+  thirtyCasesFocusOverride = null;
+  thirtyCasesSimChain = null;
+  // Reset peer-coverage choices back to the case's documented defaults.
+  thirtyCasesPeerOwnerId = null;
+  thirtyCasesPeerSubstituteId = null;
+  renderThirtyCasesPeerControls(THIRTY_CASES.find((c) => c.id === id));
+  // Reset partial-acting choices back to the case's documented defaults.
+  thirtyCasesPartialManagerId = null;
+  thirtyCasesPartialLeaveCoverId = null;
+  thirtyCasesPartialReviewCoverId = null;
+  thirtyCasesPartialMode = "leave";
+  renderThirtyCasesPartialControls(THIRTY_CASES.find((c) => c.id === id));
+  // Reset override / secondment choices back to the case's documented default.
+  thirtyCasesOverrideEmployeeId = null;
+  thirtyCasesOverridePrimaryId = null;
+  renderThirtyCasesOverrideControls(THIRTY_CASES.find((c) => c.id === id));
+  updateThirtyCasesDetail();
+  renderThirtyCasesDiagram();
 }
 
 // Case #1 custom node rendering: draw an acting overlay node to the right of
@@ -6595,395 +6690,145 @@ function decorateItsoCaseSkipLevelActing(svg, users) {
   svg.appendChild(path);
 }
 
-function rerouteItsoCaseOneHighlightedPathViaActing(svg, users, chains) {
-  if (!svg || !chains || !chains.length) return;
-  const hasIvan = chains.some((chain) => Array.isArray(chain) && chain.includes("Ivan"));
-  if (!hasIvan) return;
-
-  const ivan = users.find((u) => u.name === "Ivan" && u.department_code === "ITSO");
-  const boris = users.find((u) => u.name === "Boris" && u.department_code === "ITSO");
-  if (!ivan || !boris) return;
-
-  // Ensure no visible Boris -> Ivan relation in Case 1.
-  svg
-    .querySelectorAll(`.diagram-edge[data-child-id="${boris.id}"][data-parent-id="${ivan.id}"]`)
-    .forEach((edge) => edge.remove());
-  svg
-    .querySelectorAll(`.target-edge[data-child-id="${boris.id}"][data-parent-id="${ivan.id}"]`)
-    .forEach((edge) => edge.remove());
+// Return the override / secondment spec for a case, if any. These cases (e.g.
+// Case #7) keep the employee's home position for payroll but override their
+// reporting line so leave routes to a chosen HR manager (the primary approver).
+function thirtyCasesOverrideSpec(testCase) {
+  return (testCase && testCase.override) || null;
 }
 
-function decorateItsoCaseVacantHead(svg, users) {
-  const ingrid = users.find((u) => u.name === "Ingrid" && u.department_code === "ITSO");
-  if (!ingrid) return;
-  const ingridNode = svg.querySelector(`.diagram-node[data-user-id="${ingrid.id}"]`);
-  if (!ingridNode) return;
-  const rect = ingridNode.querySelector("rect");
-  if (rect) rect.classList.add("vacant-node-outline");
-  const nameText = ingridNode.querySelector(".node-name");
-  if (!nameText) return;
-  nameText.textContent = "Vacant";
-  nameText.setAttribute("font-style", "italic");
-  nameText.removeAttribute("textLength");
-  nameText.removeAttribute("lengthAdjust");
-  const maxTextW = NODE_W - 12;
-  if (nameText.getComputedTextLength && nameText.getComputedTextLength() > maxTextW) {
-    nameText.setAttribute("textLength", String(maxTextW));
-    nameText.setAttribute("lengthAdjust", "spacingAndGlyphs");
-  }
-}
-
-function decorateItsoCaseSplitAllocation(svg, users) {
-  const bruno = users.find((u) => u.name === "Bruno");
-  if (!bruno) return;
-  const node = svg.querySelector(`.diagram-node[data-user-id="${bruno.id}"]`);
-  if (!node) return;
-  const nameText = node.querySelector(".node-name");
-  if (!nameText) return;
-  nameText.textContent = "Bruno [Infra/Apps]";
-  nameText.removeAttribute("textLength");
-  nameText.removeAttribute("lengthAdjust");
-  const maxTextW = NODE_W - 12;
-  if (nameText.getComputedTextLength && nameText.getComputedTextLength() > maxTextW) {
-    nameText.setAttribute("textLength", String(maxTextW));
-    nameText.setAttribute("lengthAdjust", "spacingAndGlyphs");
-  }
-}
-
-// ITSO Case #9 refinement: make the co-head model explicit by linking Ivan and
-// Ingrid with a shared authority bridge and label (any-one-approve).
-function decorateItsoCaseCoHeads(svg, users) {
-  decorateThirtyCaseCoHeads(svg, users);
-
-  const ivan = users.find((u) => u.name === "Ivan" && u.department_code === "ITSO");
-  const ingrid = users.find((u) => u.name === "Ingrid" && u.department_code === "ITSO");
-  if (!ivan || !ingrid) return;
-
-  const ivanNode = svg.querySelector(`.diagram-node[data-user-id="${ivan.id}"]`);
-  const ingridNode = svg.querySelector(`.diagram-node[data-user-id="${ingrid.id}"]`);
-  if (!ivanNode || !ingridNode) return;
-
-  // Keep both co-head nodes styled consistently.
-
-  const parsePos = (node) => {
-    const m = /translate\(([-\d.]+),([-\d.]+)\)/.exec(node.getAttribute("transform") || "");
-    if (!m) return null;
-    return { x: parseFloat(m[1]), y: parseFloat(m[2]) };
+// Resolve the seconded employee and the currently chosen primary approver for an
+// override case, falling back to the case's documented default approver.
+function thirtyCasesOverrideSelection(users, testCase) {
+  const spec = thirtyCasesOverrideSpec(testCase);
+  if (!spec) return null;
+  const defaultEmployee = users.find((u) => u.name === spec.employee);
+  const defaultPrimary = users.find((u) => u.name === spec.primaryApprover);
+  const employeeId = thirtyCasesOverrideEmployeeId != null
+    ? thirtyCasesOverrideEmployeeId
+    : (defaultEmployee ? defaultEmployee.id : null);
+  const primaryApproverId = thirtyCasesOverridePrimaryId != null
+    ? thirtyCasesOverridePrimaryId
+    : (defaultPrimary ? defaultPrimary.id : null);
+  return {
+    employeeId,
+    primaryApproverId,
   };
-  const ivanPos = parsePos(ivanNode);
-  const ingridPos = parsePos(ingridNode);
-  if (!ivanPos || !ingridPos) return;
-
-  const top = ivanPos.y <= ingridPos.y
-    ? { pos: ivanPos }
-    : { pos: ingridPos };
-  const bottom = top.pos === ivanPos
-    ? { pos: ingridPos }
-    : { pos: ivanPos };
-
-  const topPort = { x: top.pos.x + NODE_W / 2, y: top.pos.y + NODE_H };
-  const bottomPort = { x: bottom.pos.x + NODE_W / 2, y: bottom.pos.y };
-  const gap = Math.max(bottomPort.y - topPort.y, 0);
-  const laneY = topPort.y + Math.max(10, gap * 0.45);
-  const ns = "http://www.w3.org/2000/svg";
-
-  const bridge = document.createElementNS(ns, "path");
-  bridge.setAttribute("class", "itso-cohead-bridge");
-  bridge.setAttribute(
-    "d",
-    `M ${topPort.x} ${topPort.y} L ${topPort.x} ${laneY} L ${bottomPort.x} ${laneY} L ${bottomPort.x} ${bottomPort.y}`
-  );
-  svg.appendChild(bridge);
-
-  const label = document.createElementNS(ns, "text");
-  label.setAttribute("class", "itso-cohead-label");
-  label.setAttribute("x", String((topPort.x + bottomPort.x) / 2));
-  label.setAttribute("y", String(laneY - 6));
-  label.textContent = "Any-one-approve co-head bridge";
-  svg.appendChild(label);
-
-  const cara = users.find((u) => u.name === "Cara" && u.department_code === "ITSO");
-  if (!cara) return;
-  [ivan, ingrid].forEach((head) => {
-    svg
-      .querySelectorAll(`.diagram-edge[data-child-id="${cara.id}"][data-parent-id="${head.id}"]`)
-      .forEach((edge) => edge.classList.add("itso-cohead-branch"));
-  });
 }
 
-function itsoCasesTargetChain(users, testCase) {
-  if (!testCase || (testCase.target && testCase.target.length === 0)) return null;
-  if (testCase.id === 19) {
-    const future = users.find((u) => u.name === "Boris [ITSO ➜ HRO]");
-    const chains = [];
-    if (future) {
-      const futureChain = thirtyCasesFocusChain(users, future.id);
-      if (Array.isArray(futureChain)) chains.push(...futureChain);
-    }
-    const boris = users.find((u) => u.name === "Boris" && u.department_code === "ITSO");
-    const iris = users.find((u) => u.name === "Iris" && u.department_code === "ITSO");
-    const isaac = users.find((u) => u.name === "Isaac" && u.department_code === "ITSO");
-    if (boris && iris && isaac) {
-      chains.push([boris.name, iris.name, isaac.name]);
-    } else if (boris) {
-      const homeChain = thirtyCasesFocusChain(users, boris.id);
-      if (Array.isArray(homeChain)) chains.push(...homeChain);
-    }
-    if (chains.length) return capItsoChainsToSecondHigher(chains, testCase);
-  }
-  if (testCase.id === 15) {
-    const ivan = users.find((u) => u.name === "Ivan" && u.department_code === "ITSO");
-    if (!ivan) return null;
-    return capItsoChainsToSecondHigher(
-      users
-        .filter((u) => u.department_code === "ITSO" && u.id !== ivan.id)
-        .map((u) => [u.name, ivan.name])
-    , testCase);
-  }
-  if (testCase.id === 9) {
-    const cara = users.find((u) => u.name === "Cara" && u.department_code === "ITSO");
-    const ivan = users.find((u) => u.name === "Ivan" && u.department_code === "ITSO");
-    const ingrid = users.find((u) => u.name === "Ingrid" && u.department_code === "ITSO");
-    if (cara && ivan && ingrid) {
-      return capItsoChainsToSecondHigher(
-        itsoCase9ExpandToCoHeads([[cara.name, ivan.name], [cara.name, ingrid.name]], users)
-      , testCase);
-    }
-    if (cara && ivan) {
-      return capItsoChainsToSecondHigher(itsoCase9ExpandToCoHeads([[cara.name, ivan.name]], users), testCase);
-    }
-    if (cara && ingrid) {
-      return capItsoChainsToSecondHigher(itsoCase9ExpandToCoHeads([[cara.name, ingrid.name]], users), testCase);
-    }
-  }
-  if (testCase.id === 3) {
-    const sel = itsoCasesPartialSelection(users, testCase);
-    if (!sel || sel.managerId == null) return null;
-    const manager = users.find((u) => u.id === sel.managerId);
-    const leaveCover = users.find((u) => u.id === sel.leaveCoverId);
-    const reviewCover = users.find((u) => u.id === sel.reviewCoverId);
-    const cover = sel.mode === "review" ? reviewCover : leaveCover;
-    const secondLevel = manager && manager.manager_name ? users.find((u) => u.name === manager.manager_name) : null;
-    const requester = manager ? users.find((u) => u.manager_name === manager.name) || manager : null;
-    if (requester && cover && secondLevel) return capItsoChainsToSecondHigher([[requester.name, cover.name, secondLevel.name]], testCase);
-    if (requester && cover) return capItsoChainsToSecondHigher([[requester.name, cover.name]], testCase);
-  }
-  if (testCase.target && testCase.target.length) return capItsoChainsToSecondHigher(testCase.target, testCase);
-  return capItsoChainsToSecondHigher(thirtyCasesFocusChain(users, itsoCasesFocusId(users, testCase)), testCase);
+// Build the reporting-line edge that overrides the seconded employee's primary
+// manager to the chosen primary approver, so the simulation routes leave through
+// that manager (and their own manager as the emergent second level).
+function thirtyCasesOverrideEdges(testCase) {
+  const spec = thirtyCasesOverrideSpec(testCase);
+  if (!spec) return [];
+  const users = thirtyCasesUsers();
+  const sel = thirtyCasesOverrideSelection(users, testCase);
+  if (!sel || sel.employeeId == null || sel.primaryApproverId == null) return [];
+  if (sel.employeeId === sel.primaryApproverId) return [];
+  return [{ user_id: sel.employeeId, manager_id: sel.primaryApproverId }];
 }
 
-function itsoCase9ExpandToCoHeads(chains, users) {
-  if (!Array.isArray(chains)) return chains;
-  const ivan = users.find((u) => u.name === "Ivan" && u.department_code === "ITSO");
-  const ingrid = users.find((u) => u.name === "Ingrid" && u.department_code === "ITSO");
-  const coHeads = [ivan, ingrid].filter(Boolean).map((u) => u.name);
-  if (!coHeads.length) return chains;
-
-  const expanded = [];
-  const seen = new Set();
-  const addUnique = (chain) => {
-    if (!Array.isArray(chain) || !chain.length) return;
-    const key = chain.join("|");
-    if (seen.has(key)) return;
-    seen.add(key);
-    expanded.push(chain);
-  };
-
-  chains.forEach((chain) => {
-    if (!Array.isArray(chain) || !chain.length) return;
-    const headIdx = chain.findIndex((name) => coHeads.includes(name));
-    if (headIdx === -1) {
-      addUnique(chain);
-      return;
-    }
-    coHeads.forEach((headName) => {
-      addUnique([...chain.slice(0, headIdx), headName]);
-    });
-  });
-
-  return expanded;
+// Build the illustrative default target line for an override case: the seconded
+// employee routes to the chosen primary approver, then up to that approver's own
+// manager (the second level that the routing engine derives automatically).
+function thirtyCasesOverrideActiveChain(users, testCase) {
+  const sel = thirtyCasesOverrideSelection(users, testCase);
+  if (!sel || sel.employeeId == null || sel.primaryApproverId == null) return null;
+  const employee = users.find((u) => u.id === sel.employeeId);
+  const primary = users.find((u) => u.id === sel.primaryApproverId);
+  if (!employee || !primary) return null;
+  const chain = [employee.name, primary.name];
+  const secondLevel = users.find((u) => u.name === primary.manager_name);
+  if (secondLevel) chain.push(secondLevel.name);
+  return [chain];
 }
 
-function itsoCasesFocusedChain(users, testCase, focusId) {
-  if (focusId == null) return null;
-  const base = thirtyCasesFocusChain(users, focusId);
-  if (!Array.isArray(base) || !base.length || !testCase) {
-    return capItsoChainsToSecondHigher(base, testCase);
-  }
-
-  if (testCase.id === 19) {
-    const person = users.find((u) => u.id === focusId);
-    const future = users.find((u) => u.name === "Boris [ITSO ➜ HRO]");
-    const boris = users.find((u) => u.name === "Boris" && u.department_code === "ITSO");
-    const iris = users.find((u) => u.name === "Iris" && u.department_code === "ITSO");
-    const isaac = users.find((u) => u.name === "Isaac" && u.department_code === "ITSO");
-    if (person?.name === "Boris [ITSO ➜ HRO]" && future) {
-      return capItsoChainsToSecondHigher(thirtyCasesFocusChain(users, future.id), testCase);
-    }
-    if (person?.name === "Boris" && boris && iris && isaac) {
-      return [[boris.name, iris.name, isaac.name]];
-    }
-  }
-
-  if (testCase.id === 22) {
-    const person = users.find((u) => u.id === focusId);
-    const dana = users.find((u) => u.name === "Dana" && u.department_code === "ITSO");
-    const cleo = users.find((u) => u.name === "Cleo" && u.department_code === "ITSO");
-    const cyrus = users.find((u) => u.name === "Cyrus" && u.department_code === "ITSO");
-    const igor = users.find((u) => u.name === "Igor" && u.department_code === "ITSO");
-    const isaac = users.find((u) => u.name === "Isaac" && u.department_code === "ITSO");
-    if (
-      person?.name === "Dana" &&
-      dana && cleo && cyrus && igor && isaac
-    ) {
-      const route = itsoCase22PathMode === "secondary"
-        ? [[dana.name, igor.name, isaac.name]]
-        : [[dana.name, cleo.name, cyrus.name]];
-      return capItsoChainsToSecondHigher(
-        route,
-        testCase
-      );
-    }
-  }
-
-  if (testCase.id === 15) {
-    const person = users.find((u) => u.id === focusId);
-    const ivan = users.find((u) => u.name === "Ivan" && u.department_code === "ITSO");
-    if (!person || !ivan || person.id === ivan.id) return capItsoChainsToSecondHigher(base, testCase);
-    return [[person.name, ivan.name]];
-  }
-
-  if (testCase.id === 9) {
-    return capItsoChainsToSecondHigher(itsoCase9ExpandToCoHeads(base, users), testCase);
-  }
-
-  if (testCase.id !== 3) {
-    return capItsoChainsToSecondHigher(base, testCase);
-  }
-
-  const sel = itsoCasesPartialSelection(users, testCase);
-  if (!sel || sel.managerId == null) return capItsoChainsToSecondHigher(base, testCase);
-
-  const manager = users.find((u) => u.id === sel.managerId);
-  const leaveCover = users.find((u) => u.id === sel.leaveCoverId);
-  const reviewCover = users.find((u) => u.id === sel.reviewCoverId);
-  const cover = sel.mode === "review" ? reviewCover : leaveCover;
-  if (!manager || !cover) return capItsoChainsToSecondHigher(base, testCase);
-
-  const adjusted = base.map((chain) => {
-    if (!Array.isArray(chain) || !chain.length) return chain;
-    const idx = chain.indexOf(manager.name);
-    if (idx === -1) return chain;
-    return [...chain.slice(0, idx), cover.name, ...chain.slice(idx + 1)];
-  });
-
-  return capItsoChainsToSecondHigher(adjusted, testCase);
-}
-
-function capItsoChainsToSecondHigher(chains, testCase) {
-  if (!Array.isArray(chains)) return chains;
-  const cap = testCase && testCase.id === 21 ? 4 : 3;
-  return chains
-    .filter((chain) => Array.isArray(chain) && chain.length)
-    .map((chain) => chain.slice(0, cap));
-}
-
-function selectItsoCase(id) {
-  itsoCasesSelected = id;
-  try {
-    localStorage.setItem(ITSO_CASE_SELECTED_KEY, String(id));
-  } catch (e) {
-    // Ignore storage errors in restricted contexts.
-  }
-  itsoCasesFocusOverride = null;
-  itsoCasesPartialManagerId = null;
-  itsoCasesPartialLeaveCoverId = null;
-  itsoCasesPartialReviewCoverId = null;
-  itsoCasesPartialMode = "leave";
-  itsoCase8PathMode = "both";
-  itsoCase22PathMode = "primary";
-  itsoCase20ViewMode = "historical";
-  syncItsoCaseRadioSelection();
-  updateItsoCasesReviewNav();
-  updateItsoCasesDetail();
-  renderItsoCasesDiagram();
-}
-
-function updateItsoCasesDetail() {
-  const tc = ITSO_CASES.find((c) => c.id === itsoCasesSelected);
-  const titleEl = document.getElementById("itso-cases-title");
-  const scenarioEl = document.getElementById("itso-cases-scenario");
-  const methodEl = document.getElementById("itso-cases-method");
-  const partialWrap = document.getElementById("itso-cases-partial-controls");
-  if (!titleEl || !scenarioEl || !methodEl) return;
-  if (!tc) {
-    titleEl.textContent = "Select an ITSO case";
-    scenarioEl.textContent = "Pick a case on the left to bold its ITSO-only target reporting line.";
-    methodEl.textContent = "";
-    if (partialWrap) partialWrap.classList.add("hidden");
+// Populate and show the override-case selectors, or hide them for any other
+// case. The employee selector lists the seconded employee's home-department
+// staff (the case focus department, excluding the dept head). The primary
+// selector lists the Layer 3 managers (level ranks 5-6) in the target
+// department, so the user picks who approves the secondment.
+function renderThirtyCasesOverrideControls(testCase) {
+  const wrap = document.getElementById("thirty-cases-override-controls");
+  const employeeSel = document.getElementById("thirty-cases-override-employee");
+  const primarySel = document.getElementById("thirty-cases-override-primary");
+  if (!wrap || !employeeSel || !primarySel) return;
+  const spec = thirtyCasesOverrideSpec(testCase);
+  if (!spec) {
+    wrap.classList.add("hidden");
     return;
   }
-  if (partialWrap) partialWrap.classList.toggle("hidden", tc.id !== 3);
-  const users = itsoCasesUsers(tc);
-  const nodeNames = users.map((u) => u.name);
-  const fmtNodeText = (text) => italicizeNodeNames(text, nodeNames);
-  titleEl.textContent = `${tc.id}. ${tc.title} — ${tc.category}`;
-  const justificationText = ITSO_CASES_JUSTIFICATION[tc.id];
-  const party = ITSO_CASE_SECOND_PARTY[tc.id];
-  const partyText = party && party.includeHro
-    ? "<div class=\"itso-note-card\"><span class=\"itso-note-title\">Cross-party context</span><p>ITSO + HRO are shown together for this case.</p></div>"
-    : "";
-  const caseStudyHtml = `<p class="itso-case-main">${fmtNodeText(tc.scenario)}</p>`;
-  const level = caseChangeLevel(tc.id);
-  const levelBadge = `<div class="itso-case-meta"><span class="thirty-case-level ${level.className}">${escHtml(level.label)}</span></div>`;
-  const intentionBlock = `
-    <div class="itso-desc-section itso-intention-section">
-      <h4>Intention</h4>
-      <div class="itso-case-intention">${fmtNodeText(caseIntentionDetail(tc.id))}</div>
-    </div>
-  `;
-  const case20ControlsHtml = tc.id === 20
-    ? `
-      <div class="itso-case20-controls" id="itso-case20-controls">
-        <span class="itso-case20-controls-title">Case 20 view:</span>
-        <label><input type="radio" name="itso-case20-mode" value="historical" ${itsoCase20ViewMode === "historical" ? "checked" : ""}> Approved history</label>
-        <label><input type="radio" name="itso-case20-mode" value="counterfactual" ${itsoCase20ViewMode === "counterfactual" ? "checked" : ""}> Counterfactual recalculation</label>
-        <label><input type="radio" name="itso-case20-mode" value="both" ${itsoCase20ViewMode === "both" ? "checked" : ""}> Show both</label>
-      </div>
-    `
-    : "";
-  const justificationHtml = justificationText && typeof justificationText === "object"
-    ? `
-      <ul class="itso-just-points">
-        <li><span>What changed</span><p>${fmtNodeText(justificationText.changes || "")}</p></li>
-        <li><span>Why we applied it</span><p>${fmtNodeText(justificationText.why || "")}</p></li>
-      </ul>
-    `
-    : `<div class="itso-note-card"><span class="itso-note-title">Justification</span><p>${fmtNodeText(justificationText || "No case-specific justification is defined yet.")}</p></div>`;
-  scenarioEl.innerHTML = `
-    ${levelBadge}
-    <div class="itso-desc-section itso-description-section">
-      <h4>Description</h4>
-      ${caseStudyHtml}
-      ${partyText ? `<div class="itso-note-grid">${partyText}</div>` : ""}
-    </div>
-    ${intentionBlock}
-    <div class="itso-desc-section itso-route-section">
-      <h4>Route and Rules</h4>
-      ${case20ControlsHtml}
-    </div>
-    <div class="itso-desc-section itso-justification-section">
-      <h4>Case-Specific Justification</h4>
-      ${justificationHtml}
-    </div>
-  `;
-  if (tc.id === 20) {
-    scenarioEl.querySelectorAll('input[name="itso-case20-mode"]').forEach((input) => {
-      input.addEventListener("change", () => {
-        itsoCase20ViewMode = input.value;
-        renderItsoCasesDiagram();
-        updateItsoCasesDetail();
-      });
+  const users = thirtyCasesUsers();
+  const sel = thirtyCasesOverrideSelection(users, testCase) || {};
+  // Source (home) department of the seconded employee — exclude the dept head
+  // (top rank 4) so only employees are selectable.
+  const sourceDept = testCase.focusDept || null;
+  const employees = users.filter(
+    (u) =>
+      (!sourceDept || u.department_code === sourceDept) && u.level_rank > 4
+  );
+  const employeeCandidates = employees.length ? employees : users;
+  employeeSel.replaceChildren(
+    ...employeeCandidates.map((u) => {
+      const opt = document.createElement("option");
+      opt.value = String(u.id);
+      opt.textContent = `${u.name} — ${u.department_code} / ${u.level_name}`;
+      if (u.id === sel.employeeId) opt.selected = true;
+      return opt;
+    })
+  );
+  const dept = spec.targetDept || null;
+  const managers = users.filter(
+    (u) =>
+      (!dept || u.department_code === dept) &&
+      u.level_rank >= 5 &&
+      u.level_rank <= 6
+  );
+  const candidates = managers.length ? managers : users;
+  primarySel.replaceChildren(
+    ...candidates.map((u) => {
+      const opt = document.createElement("option");
+      opt.value = String(u.id);
+      opt.textContent = `${u.name} — ${u.department_code} / ${u.level_name}`;
+      if (u.id === sel.primaryApproverId) opt.selected = true;
+      return opt;
+    })
+  );
+  wrap.classList.remove("hidden");
+}
+
+// React to a change in either override selector: record the choices, re-bold
+// the default line, and re-run the simulation for any person currently clicked.
+function onThirtyCasesOverrideChange() {
+  const employeeSel = document.getElementById("thirty-cases-override-employee");
+  const primarySel = document.getElementById("thirty-cases-override-primary");
+  thirtyCasesOverrideEmployeeId =
+    employeeSel && employeeSel.value ? Number(employeeSel.value) : null;
+  thirtyCasesOverridePrimaryId =
+    primarySel && primarySel.value ? Number(primarySel.value) : null;
+  renderThirtyCasesDiagram();
+  if (thirtyCasesFocusOverride != null) {
+    runThirtyCasesSimulation(thirtyCasesFocusOverride);
+  } else {
+    updateThirtyCasesDetail();
+  }
+}
+
+async function runThirtyCasesSimulation(userId) {
+  const tc = THIRTY_CASES.find((c) => c.id === thirtyCasesSelected);
+  try {
+    const resp = await fetch("/api/simulate-reporting-line", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        requester_id: Number(userId),
+        edges: thirtyCasesOverrideEdges(tc),
+        action_code: thirtyCasesAction(tc),
+        request_at: (tc && tc.requestAt) || null,
+        project_code: (tc && tc.projectCode) || null,
+        overlays: thirtyCasesOverlays(tc),
+      }),
     });
   }
   let line = "";

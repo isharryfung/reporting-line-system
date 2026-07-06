@@ -582,6 +582,21 @@ def test_simulate_reporting_line_partial_acting_decouples_leave_and_review():
     assert review["overlay_steps"][1]["approver"] == "Cara"
 
 
+def test_simulate_reporting_line_secondment_override_routes_to_hr_manager():
+    """Case #7: an IT employee seconded 100% to HR has his reporting line
+    overridden to an HR manager, so leave routes to that chosen primary approver
+    (Hazel) and then to her own manager as the emergent second level (Harvey)."""
+    ids = _user_ids()
+    result = simulate_reporting_line(
+        requester_id=ids["Boris"],
+        edges=[{"user_id": ids["Boris"], "manager_id": ids["Hazel"]}],
+        action_code="annual_leave",
+    )
+    assert result["status"] == "success"
+    assert [step["approver"] for step in result["overlay_steps"]] == ["Hazel", "Harvey"]
+    assert all(step["source"] == "official" for step in result["overlay_steps"])
+
+
 def test_simulate_overlay_resolves_action_code_scope():
     """An overlay scoped by action_code applies only to that action."""
     ids = _user_ids()
