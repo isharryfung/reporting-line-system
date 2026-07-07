@@ -17,6 +17,8 @@ from src.models import (
     Action,
     ActionRoutingRule,
     ActingAssignment,
+    ApprovalRouteTemplate,
+    AuditLog,
     CoverageAssignment,
     DelegationAssignment,
     Department,
@@ -28,7 +30,7 @@ from src.models import (
     ReportingLine,
     User,
 )
-from src.sample_data import seed_sample_data
+from src.sample_data import seed_approval_templates, seed_sample_data
 from src.services.approval import submit_request
 from src.services.org_chart import get_department_org_chart
 from src.services.permissions import validate_team_lead_edit_permission
@@ -1974,6 +1976,822 @@ def _reporting_line_wording(
     return " ".join(sentences)
 
 
+# ---------------------------------------------------------------------------
+# Audit log helper
+# ---------------------------------------------------------------------------
+
+def add_audit_log(
+    session: Session,
+    *,
+    actor: str = "system",
+    action: str,
+    entity_type: str,
+    entity_id: int | None = None,
+    entity_name: str | None = None,
+    before_value: str | None = None,
+    after_value: str | None = None,
+    source_page: str | None = None,
+    result: str = "success",
+) -> None:
+    """Add an audit log entry."""
+    session.add(
+        AuditLog(
+            actor=actor,
+            action=action,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            entity_name=entity_name,
+            before_value=before_value,
+            after_value=after_value,
+            source_page=source_page,
+            result=result,
+            details=None,
+        )
+    )
+    session.flush()
+
+
+# ---------------------------------------------------------------------------
+# Dashboard stats
+# ---------------------------------------------------------------------------
+
+def api_dashboard_stats() -> dict[str, Any]:
+    """Return summary statistics for the dashboard."""
+    session = _get_session()
+    try:
+        dept_count = session.query(Department).count()
+        employee_count = session.query(User).count()
+        active_count = session.query(User).filter(User.is_active.is_(True)).count()
+        inactive_count = employee_count - active_count
+
+        from datetime import timezone as _tz
+        now = datetime.now(_tz.utc)
+
+        acting_count = (
+            session.query(ActingAssignment)
+            .filter(
+                ActingAssignment.is_active.is_(True),
+                ActingAssignment.effective_from <= now,
+                ActingAssignment.effective_to >= now,
+            )
+            .count()
+        )
+        coverage_count = (
+            session.query(CoverageAssignment)
+            .filter(
+                CoverageAssignment.is_active.is_(True),
+                CoverageAssignment.effective_from <= now,
+                CoverageAssignment.effective_to >= now,
+            )
+            .count()
+        )
+        delegation_count = (
+            session.query(DelegationAssignment)
+            .filter(
+                DelegationAssignment.is_active.is_(True),
+                DelegationAssignment.effective_from <= now,
+                DelegationAssignment.effective_to >= now,
+            )
+            .count()
+        )
+        handover_count = (
+            session.query(HandoverOverlap)
+            .filter(
+                HandoverOverlap.is_active.is_(True),
+                HandoverOverlap.effective_from <= now,
+                HandoverOverlap.effective_to >= now,
+            )
+            .count()
+        )
+        active_overlays = acting_count + coverage_count + delegation_count + handover_count
+
+        action_count = session.query(Action).count()
+
+        # Validation issues
+        issues = _compute_validation_issues(session)
+        validation_count = len(issues)
+
+        # Recent changes from audit log
+        recent_logs = (
+            session.query(AuditLog)
+            .order_by(AuditLog.created_at.desc())
+            .limit(5)
+            .all()
+        )
+        recent_changes = [
+            {
+                "timestamp": log.created_at.isoformat(),
+                "actor": log.actor or "system",
+                "action": log.action,
+                "entity_type": log.entity_type,
+                "entity_name": log.entity_name or f"id:{log.entity_id}",
+            }
+            for log in recent_logs
+        ]
+
+        return {
+            "departments": dept_count,
+            "employees": employee_count,
+            "active_employees": active_count,
+            "inactive_employees": inactive_count,
+            "active_overlays": active_overlays,
+            "overlay_breakdown": {
+                "acting": acting_count,
+                "coverage": coverage_count,
+                "delegation": delegation_count,
+                "handover": handover_count,
+            },
+            "actions": action_count,
+            "validation_issues": validation_count,
+            "recent_changes": recent_changes,
+        }
+    finally:
+        session.close()
+
+
+# ---------------------------------------------------------------------------
+# Approval templates CRUD
+# ---------------------------------------------------------------------------
+
+def api_list_approval_templates() -> dict[str, Any]:
+    session = _get_session()
+    try:
+        templates = session.query(ApprovalRouteTemplate).order_by(ApprovalRouteTemplate.id).all()
+        return {
+            "templates": [
+                {
+                    "id": t.id,
+                    "name": t.name,
+                    "code": t.code,
+                    "description": t.description,
+                    "num_levels": t.num_levels,
+                    "routing_type": t.routing_type,
+                    "allow_overlay": t.allow_overlay,
+                    "self_approval_handling": t.self_approval_handling,
+                    "is_active": t.is_active,
+                }
+                for t in templates
+            ]
+        }
+    finally:
+        session.close()
+
+
+def api_create_approval_template(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    session = _get_session()
+    try:
+        name = str(body.get("name", "")).strip()
+        code = str(body.get("code", "")).strip()
+        if not name or not code:
+            return {"error": "name and code are required."}, 400
+        if session.query(ApprovalRouteTemplate).filter(ApprovalRouteTemplate.code == code).first():
+            return {"error": f"Template code {code!r} already in use."}, 400
+        tpl = ApprovalRouteTemplate(
+            name=name,
+            code=code,
+            description=body.get("description"),
+            num_levels=int(body.get("num_levels", 1)),
+            routing_type=str(body.get("routing_type", "standard")),
+            allow_overlay=bool(body.get("allow_overlay", True)),
+            self_approval_handling=str(body.get("self_approval_handling", "escalate")),
+            is_active=bool(body.get("is_active", True)),
+        )
+        session.add(tpl)
+        session.commit()
+        session.refresh(tpl)
+        return {"status": "ok", "template": {"id": tpl.id, "name": tpl.name, "code": tpl.code}}, 201
+    except Exception as exc:
+        session.rollback()
+        return {"error": str(exc)}, 500
+    finally:
+        session.close()
+
+
+def api_update_approval_template(tpl_id: int, body: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    session = _get_session()
+    try:
+        tpl = session.get(ApprovalRouteTemplate, tpl_id)
+        if tpl is None:
+            return {"error": f"Template {tpl_id} not found."}, 404
+        for field in ("name", "description", "routing_type", "self_approval_handling"):
+            if field in body:
+                setattr(tpl, field, str(body[field]))
+        if "code" in body:
+            code = str(body["code"]).strip()
+            clash = (
+                session.query(ApprovalRouteTemplate)
+                .filter(ApprovalRouteTemplate.code == code, ApprovalRouteTemplate.id != tpl_id)
+                .first()
+            )
+            if clash:
+                return {"error": f"Template code {code!r} already in use."}, 400
+            tpl.code = code
+        if "num_levels" in body:
+            tpl.num_levels = int(body["num_levels"])
+        if "allow_overlay" in body:
+            tpl.allow_overlay = bool(body["allow_overlay"])
+        if "is_active" in body:
+            tpl.is_active = bool(body["is_active"])
+        session.commit()
+        return {"status": "ok"}, 200
+    except Exception as exc:
+        session.rollback()
+        return {"error": str(exc)}, 500
+    finally:
+        session.close()
+
+
+def api_delete_approval_template(tpl_id: int) -> tuple[dict[str, Any], int]:
+    session = _get_session()
+    try:
+        tpl = session.get(ApprovalRouteTemplate, tpl_id)
+        if tpl is None:
+            return {"error": f"Template {tpl_id} not found."}, 404
+        session.delete(tpl)
+        session.commit()
+        return {"status": "ok"}, 200
+    except Exception as exc:
+        session.rollback()
+        return {"error": str(exc)}, 500
+    finally:
+        session.close()
+
+
+# ---------------------------------------------------------------------------
+# Overlays unified API
+# ---------------------------------------------------------------------------
+
+def _serialize_overlay(obj: Any, overlay_type: str) -> dict[str, Any]:
+    """Serialize any overlay assignment object to a dict."""
+    result: dict[str, Any] = {
+        "id": obj.id,
+        "overlay_type": overlay_type,
+        "effective_from": obj.effective_from.isoformat() if obj.effective_from else None,
+        "effective_to": obj.effective_to.isoformat() if obj.effective_to else None,
+        "is_active": obj.is_active,
+        "dept_id": obj.dept_id,
+        "dept_name": obj.department.name if obj.department else None,
+        "org_unit_id": obj.org_unit_id,
+        "action_id": obj.action_id,
+    }
+    if overlay_type == "acting":
+        result.update({
+            "from_user_id": obj.principal_user_id,
+            "from_user_name": obj.principal_user.name if obj.principal_user else None,
+            "to_user_id": obj.acting_user_id,
+            "to_user_name": obj.acting_user.name if obj.acting_user else None,
+        })
+    elif overlay_type == "coverage":
+        result.update({
+            "from_user_id": obj.covered_user_id,
+            "from_user_name": obj.covered_user.name if obj.covered_user else None,
+            "to_user_id": obj.coverage_user_id,
+            "to_user_name": obj.coverage_user.name if obj.coverage_user else None,
+        })
+    elif overlay_type == "delegation":
+        result.update({
+            "from_user_id": obj.delegator_user_id,
+            "from_user_name": obj.delegator_user.name if obj.delegator_user else None,
+            "to_user_id": obj.delegate_user_id,
+            "to_user_name": obj.delegate_user.name if obj.delegate_user else None,
+        })
+    elif overlay_type == "handover":
+        result.update({
+            "from_user_id": obj.old_approver_id,
+            "from_user_name": obj.old_approver.name if obj.old_approver else None,
+            "to_user_id": obj.new_approver_id,
+            "to_user_name": obj.new_approver.name if obj.new_approver else None,
+            "policy": obj.policy,
+        })
+    return result
+
+
+def api_list_overlays() -> dict[str, Any]:
+    session = _get_session()
+    try:
+        acting = session.query(ActingAssignment).all()
+        coverage = session.query(CoverageAssignment).all()
+        delegation = session.query(DelegationAssignment).all()
+        handover = session.query(HandoverOverlap).all()
+        overlays = (
+            [_serialize_overlay(o, "acting") for o in acting]
+            + [_serialize_overlay(o, "coverage") for o in coverage]
+            + [_serialize_overlay(o, "delegation") for o in delegation]
+            + [_serialize_overlay(o, "handover") for o in handover]
+        )
+        return {"overlays": overlays}
+    finally:
+        session.close()
+
+
+def api_create_overlay(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    session = _get_session()
+    try:
+        overlay_type = str(body.get("overlay_type", "")).strip()
+        from_user_id = body.get("from_user_id")
+        to_user_id = body.get("to_user_id")
+        if not overlay_type or from_user_id is None or to_user_id is None:
+            return {"error": "overlay_type, from_user_id, to_user_id are required."}, 400
+
+        eff_from = _parse_request_at(body.get("effective_from")) or datetime(2000, 1, 1)
+        eff_to = _parse_request_at(body.get("effective_to")) or datetime(2099, 12, 31)
+        scope = {
+            k: int(body[k])
+            for k in ("dept_id", "org_unit_id", "action_id")
+            if body.get(k) not in (None, "")
+        }
+        is_active = bool(body.get("status", "active") == "active")
+
+        if overlay_type == "acting":
+            obj = ActingAssignment(
+                principal_user_id=int(from_user_id),
+                acting_user_id=int(to_user_id),
+                effective_from=eff_from,
+                effective_to=eff_to,
+                is_active=is_active,
+                **scope,
+            )
+        elif overlay_type == "coverage":
+            obj = CoverageAssignment(
+                covered_user_id=int(from_user_id),
+                coverage_user_id=int(to_user_id),
+                effective_from=eff_from,
+                effective_to=eff_to,
+                is_active=is_active,
+                **scope,
+            )
+        elif overlay_type == "delegation":
+            obj = DelegationAssignment(
+                delegator_user_id=int(from_user_id),
+                delegate_user_id=int(to_user_id),
+                effective_from=eff_from,
+                effective_to=eff_to,
+                is_active=is_active,
+                **scope,
+            )
+        elif overlay_type == "handover":
+            policy = str(body.get("policy", "both_required"))
+            obj = HandoverOverlap(
+                requester_user_id=int(from_user_id),
+                old_approver_id=int(from_user_id),
+                new_approver_id=int(to_user_id),
+                policy=policy,
+                effective_from=eff_from,
+                effective_to=eff_to,
+                is_active=is_active,
+                **scope,
+            )
+        else:
+            return {"error": f"Unknown overlay_type {overlay_type!r}."}, 400
+
+        session.add(obj)
+        session.commit()
+        session.refresh(obj)
+        return {"status": "ok", "overlay": _serialize_overlay(obj, overlay_type)}, 201
+    except Exception as exc:
+        session.rollback()
+        return {"error": str(exc)}, 500
+    finally:
+        session.close()
+
+
+def api_delete_overlay(overlay_type: str, overlay_id: int) -> tuple[dict[str, Any], int]:
+    session = _get_session()
+    try:
+        model_map = {
+            "acting": ActingAssignment,
+            "coverage": CoverageAssignment,
+            "delegation": DelegationAssignment,
+            "handover": HandoverOverlap,
+        }
+        model = model_map.get(overlay_type)
+        if model is None:
+            return {"error": f"Unknown overlay type {overlay_type!r}."}, 400
+        obj = session.get(model, overlay_id)
+        if obj is None:
+            return {"error": f"Overlay {overlay_type}/{overlay_id} not found."}, 404
+        session.delete(obj)
+        session.commit()
+        return {"status": "ok"}, 200
+    except Exception as exc:
+        session.rollback()
+        return {"error": str(exc)}, 500
+    finally:
+        session.close()
+
+
+# ---------------------------------------------------------------------------
+# Audit log API
+# ---------------------------------------------------------------------------
+
+def api_list_audit_logs(entity_type: str | None = None, limit: int = 50) -> dict[str, Any]:
+    session = _get_session()
+    try:
+        q = session.query(AuditLog).order_by(AuditLog.created_at.desc())
+        if entity_type:
+            q = q.filter(AuditLog.entity_type == entity_type)
+        logs = q.limit(limit).all()
+        return {
+            "logs": [
+                {
+                    "id": log.id,
+                    "timestamp": log.created_at.isoformat(),
+                    "actor": log.actor or "system",
+                    "action": log.action,
+                    "entity_type": log.entity_type,
+                    "entity_id": log.entity_id,
+                    "entity_name": log.entity_name,
+                    "before_value": log.before_value,
+                    "after_value": log.after_value,
+                    "source_page": log.source_page,
+                    "result": log.result,
+                    "details": log.details,
+                }
+                for log in logs
+            ]
+        }
+    finally:
+        session.close()
+
+
+def api_create_audit_log(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    session = _get_session()
+    try:
+        actor = str(body.get("actor", "system"))
+        action = str(body.get("action", "")).strip()
+        entity_type = str(body.get("entity_type", "")).strip()
+        if not action or not entity_type:
+            return {"error": "action and entity_type are required."}, 400
+        log = AuditLog(
+            actor=actor,
+            action=action,
+            entity_type=entity_type,
+            entity_id=body.get("entity_id"),
+            entity_name=body.get("entity_name"),
+            before_value=body.get("before_value"),
+            after_value=body.get("after_value"),
+            source_page=body.get("source_page"),
+            result=str(body.get("result", "success")),
+            details=body.get("details"),
+        )
+        session.add(log)
+        session.commit()
+        return {"status": "ok", "id": log.id}, 201
+    except Exception as exc:
+        session.rollback()
+        return {"error": str(exc)}, 500
+    finally:
+        session.close()
+
+
+# ---------------------------------------------------------------------------
+# Validation issues
+# ---------------------------------------------------------------------------
+
+def _compute_validation_issues(session: Session) -> list[dict[str, Any]]:
+    """Compute validation issues across the data model."""
+    issues: list[dict[str, Any]] = []
+    from datetime import timezone as _tz
+    now = datetime.now(_tz.utc)
+
+    # Missing manager: active users with no active primary reporting line
+    all_users = session.query(User).filter(User.is_active.is_(True)).all()
+    for user in all_users:
+        active_primary = [
+            l for l in user.reporting_lines
+            if l.is_active and l.is_primary
+        ]
+        if not active_primary and not user.dept_level.is_top_level:
+            issues.append({
+                "issue_type": "missing_manager",
+                "severity": "error",
+                "user_id": user.id,
+                "user_name": user.name,
+                "description": f"{user.name} has no active primary reporting line.",
+            })
+
+    # Circular reporting: detect cycles
+    def _has_cycle(start_id: int) -> bool:
+        visited: set[int] = set()
+        current = start_id
+        while current is not None:
+            if current in visited:
+                return True
+            visited.add(current)
+            line = (
+                session.query(ReportingLine)
+                .filter(
+                    ReportingLine.user_id == current,
+                    ReportingLine.is_primary.is_(True),
+                    ReportingLine.is_active.is_(True),
+                )
+                .first()
+            )
+            if line is None:
+                return False
+            current = line.manager_id
+        return False
+
+    for user in all_users:
+        if _has_cycle(user.id):
+            issues.append({
+                "issue_type": "circular_reporting",
+                "severity": "error",
+                "user_id": user.id,
+                "user_name": user.name,
+                "description": f"{user.name} is in a circular reporting chain.",
+            })
+
+    # Inactive approver: acting/delegation/coverage that points to inactive user
+    for aa in session.query(ActingAssignment).filter(ActingAssignment.is_active.is_(True)).all():
+        acting_user = session.get(User, aa.acting_user_id)
+        if acting_user and not acting_user.is_active:
+            principal = session.get(User, aa.principal_user_id)
+            issues.append({
+                "issue_type": "inactive_approver",
+                "severity": "warning",
+                "user_id": aa.acting_user_id,
+                "user_name": acting_user.name,
+                "description": f"Acting overlay: {acting_user.name} is inactive but covers {principal.name if principal else 'unknown'}.",
+            })
+
+    # Duplicate primary manager: users with more than one active primary line
+    from sqlalchemy import func
+    dup_query = (
+        session.query(ReportingLine.user_id, func.count(ReportingLine.id).label("cnt"))
+        .filter(ReportingLine.is_primary.is_(True), ReportingLine.is_active.is_(True))
+        .group_by(ReportingLine.user_id)
+        .having(func.count(ReportingLine.id) > 1)
+        .all()
+    )
+    for (uid, cnt) in dup_query:
+        user = session.get(User, uid)
+        if user:
+            issues.append({
+                "issue_type": "duplicate_primary_manager",
+                "severity": "error",
+                "user_id": uid,
+                "user_name": user.name,
+                "description": f"{user.name} has {cnt} active primary reporting lines.",
+            })
+
+    # Expired overlay: overlays past effective_to still marked active
+    for aa in session.query(ActingAssignment).filter(
+        ActingAssignment.is_active.is_(True),
+        ActingAssignment.effective_to < now,
+    ).all():
+        issues.append({
+            "issue_type": "expired_overlay",
+            "severity": "info",
+            "user_id": aa.acting_user_id,
+            "user_name": session.get(User, aa.acting_user_id).name if session.get(User, aa.acting_user_id) else "?",
+            "description": f"Acting overlay (id={aa.id}) expired on {aa.effective_to.date()} but is still active.",
+        })
+
+    return issues
+
+
+def api_validation_issues() -> dict[str, Any]:
+    session = _get_session()
+    try:
+        issues = _compute_validation_issues(session)
+        return {"issues": issues, "count": len(issues)}
+    finally:
+        session.close()
+
+
+# ---------------------------------------------------------------------------
+# GET /api/users/{id}
+# ---------------------------------------------------------------------------
+
+def api_get_user(user_id: int) -> tuple[dict[str, Any], int]:
+    session = _get_session()
+    try:
+        user = session.get(User, user_id)
+        if user is None:
+            return {"error": f"User {user_id} not found."}, 404
+        data = _serialize_user(user)
+        # Add reporting path
+        path = []
+        current_id = user_id
+        visited: set[int] = set()
+        while current_id is not None:
+            if current_id in visited:
+                break
+            visited.add(current_id)
+            line = (
+                session.query(ReportingLine)
+                .filter(
+                    ReportingLine.user_id == current_id,
+                    ReportingLine.is_primary.is_(True),
+                    ReportingLine.is_active.is_(True),
+                )
+                .first()
+            )
+            if line is None:
+                break
+            mgr = session.get(User, line.manager_id)
+            if mgr:
+                path.append({"id": mgr.id, "name": mgr.name})
+            current_id = line.manager_id
+        data["reporting_path"] = path
+        # Direct reports
+        direct_reports = (
+            session.query(ReportingLine)
+            .filter(
+                ReportingLine.manager_id == user_id,
+                ReportingLine.is_primary.is_(True),
+                ReportingLine.is_active.is_(True),
+            )
+            .all()
+        )
+        data["direct_reports"] = [
+            {"id": rl.user_id, "name": rl.user.name if rl.user else "?"}
+            for rl in direct_reports
+        ]
+        return data, 200
+    finally:
+        session.close()
+
+
+# ---------------------------------------------------------------------------
+# GET /api/departments/{id}/diagram-data
+# ---------------------------------------------------------------------------
+
+def api_department_diagram_data(dept_id: int) -> tuple[dict[str, Any], int]:
+    session = _get_session()
+    try:
+        dept = session.get(Department, dept_id)
+        if dept is None:
+            return {"error": f"Department {dept_id} not found."}, 404
+
+        levels = (
+            session.query(DeptLevel)
+            .filter(DeptLevel.dept_id == dept_id)
+            .order_by(DeptLevel.level_rank)
+            .all()
+        )
+        org_units = (
+            session.query(OrgUnit).filter(OrgUnit.dept_id == dept_id).all()
+        )
+        users = (
+            session.query(User).filter(User.dept_id == dept_id).all()
+        )
+
+        # All reporting lines for users in this dept
+        user_ids = [u.id for u in users]
+        reporting_lines = (
+            session.query(ReportingLine)
+            .filter(
+                ReportingLine.user_id.in_(user_ids),
+                ReportingLine.is_active.is_(True),
+            )
+            .all()
+        )
+
+        from datetime import timezone as _tz
+        now = datetime.now(_tz.utc)
+
+        acting = (
+            session.query(ActingAssignment)
+            .filter(ActingAssignment.dept_id == dept_id)
+            .all()
+        )
+        coverage = (
+            session.query(CoverageAssignment)
+            .filter(CoverageAssignment.dept_id == dept_id)
+            .all()
+        )
+        delegation = (
+            session.query(DelegationAssignment)
+            .filter(DelegationAssignment.dept_id == dept_id)
+            .all()
+        )
+        handover = (
+            session.query(HandoverOverlap)
+            .filter(HandoverOverlap.dept_id == dept_id)
+            .all()
+        )
+
+        return {
+            "department": {"id": dept.id, "name": dept.name, "code": dept.code},
+            "levels": [
+                {
+                    "id": lv.id,
+                    "level_rank": lv.level_rank,
+                    "level_name": lv.level_name,
+                    "is_top_level": lv.is_top_level,
+                }
+                for lv in levels
+            ],
+            "org_units": [
+                {"id": ou.id, "name": ou.name, "code": ou.code}
+                for ou in org_units
+            ],
+            "users": [_serialize_user(u) for u in users],
+            "reporting_lines": [
+                {
+                    "id": rl.id,
+                    "user_id": rl.user_id,
+                    "manager_id": rl.manager_id,
+                    "is_primary": rl.is_primary,
+                    "is_active": rl.is_active,
+                }
+                for rl in reporting_lines
+            ],
+            "overlays": {
+                "acting": [_serialize_overlay(o, "acting") for o in acting],
+                "coverage": [_serialize_overlay(o, "coverage") for o in coverage],
+                "delegation": [_serialize_overlay(o, "delegation") for o in delegation],
+                "handover": [_serialize_overlay(o, "handover") for o in handover],
+            },
+        }, 200
+    finally:
+        session.close()
+
+
+# ---------------------------------------------------------------------------
+# POST /api/scenario-builder
+# ---------------------------------------------------------------------------
+
+def api_scenario_builder(body: dict[str, Any]) -> dict[str, Any]:
+    """Run a custom scenario and return approval chain + explanation."""
+    requester_id = body.get("requester_id")
+    dept_id = body.get("dept_id")
+    action_code = body.get("action_code", "annual_leave")
+    request_date = body.get("request_date")
+    overlay_enabled = bool(body.get("overlay_enabled", False))
+    scenario_name = str(body.get("scenario_name", "Custom Scenario"))
+
+    if requester_id is None:
+        return {"status": "error", "error": "requester_id is required."}
+
+    result = simulate_action_request(
+        requester_id=int(requester_id),
+        action_code=str(action_code),
+        request_at=request_date,
+    )
+
+    if result.get("status") == "error":
+        return result
+
+    steps = result.get("steps", [])
+    explanation_parts = [f"Scenario: {scenario_name}."]
+    if steps:
+        approvers = [s["approver"] for s in steps]
+        explanation_parts.append(f"Approval chain: {' → '.join(approvers)}.")
+        fallback_steps = [s for s in steps if s.get("is_fallback")]
+        if fallback_steps:
+            explanation_parts.append(
+                f"Fallback used: {fallback_steps[0]['approver']}."
+            )
+    else:
+        explanation_parts.append("No approvers found.")
+
+    overlay_steps = [s for s in steps if s.get("source") not in ("official", "fallback")]
+
+    result["scenario_name"] = scenario_name
+    result["fallback_used"] = any(s.get("is_fallback") for s in steps)
+    result["overlays_applied"] = [s["source"] for s in overlay_steps]
+    result["explanation"] = " ".join(explanation_parts)
+    result["validation_result"] = "pass" if steps else "fail"
+    return result
+
+
+# ---------------------------------------------------------------------------
+# GET /api/actions (enhanced with template info)
+# ---------------------------------------------------------------------------
+
+def api_list_actions() -> dict[str, Any]:
+    session = _get_session()
+    try:
+        actions = session.query(Action).order_by(Action.name).all()
+        routing_rules = session.query(ActionRoutingRule).all()
+        rules_by_action: dict[int, list[dict[str, Any]]] = {}
+        for rr in routing_rules:
+            rules_by_action.setdefault(rr.action_id, []).append({
+                "id": rr.id,
+                "dept_id": rr.dept_id,
+                "dept_name": rr.department.name if rr.department else None,
+                "requires_primary": rr.requires_primary,
+                "requires_second_level": rr.requires_second_level,
+            })
+        return {
+            "actions": [
+                {
+                    "id": a.id,
+                    "name": a.name,
+                    "code": a.code,
+                    "is_project_scoped": a.is_project_scoped,
+                    "routing_rules": rules_by_action.get(a.id, []),
+                }
+                for a in actions
+            ]
+        }
+    finally:
+        session.close()
+
+
 class ManualTestRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
@@ -2003,6 +2821,36 @@ class ManualTestRequestHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": str(exc)}, status=404)
         elif path == "/api/seed-data":
             self._send_json(get_seed_data())
+        elif path == "/api/dashboard-stats":
+            self._send_json(api_dashboard_stats())
+        elif path == "/api/approval-templates":
+            self._send_json(api_list_approval_templates())
+        elif path == "/api/overlays":
+            self._send_json(api_list_overlays())
+        elif path == "/api/audit-logs":
+            entity_type = query.get("entity_type", [None])[0]
+            limit = int(query.get("limit", [50])[0])
+            self._send_json(api_list_audit_logs(entity_type=entity_type, limit=limit))
+        elif path == "/api/validation-issues":
+            self._send_json(api_validation_issues())
+        elif path == "/api/actions":
+            self._send_json(api_list_actions())
+        elif path.startswith("/api/users/"):
+            try:
+                user_id = int(path.split("/api/users/")[1])
+            except (ValueError, IndexError):
+                self._send_json({"error": "Invalid user ID."}, status=400)
+                return
+            result, status = api_get_user(user_id)
+            self._send_json(result, status=status)
+        elif path.startswith("/api/departments/") and path.endswith("/diagram-data"):
+            try:
+                dept_id = int(path.split("/api/departments/")[1].split("/")[0])
+            except (ValueError, IndexError):
+                self._send_json({"error": "Invalid department ID."}, status=400)
+                return
+            result, status = api_department_diagram_data(dept_id)
+            self._send_json(result, status=status)
         else:
             self._send_json({"error": "Not found"}, status=404)
 
@@ -2111,6 +2959,29 @@ class ManualTestRequestHandler(BaseHTTPRequestHandler):
             self._send_json({"status": "ok", "message": "Database reset to default seed data."})
             return
 
+        if path == "/api/approval-templates":
+            payload = self._read_json_body()
+            result, status = api_create_approval_template(payload)
+            self._send_json(result, status=status)
+            return
+
+        if path == "/api/overlays":
+            payload = self._read_json_body()
+            result, status = api_create_overlay(payload)
+            self._send_json(result, status=status)
+            return
+
+        if path == "/api/audit-logs":
+            payload = self._read_json_body()
+            result, status = api_create_audit_log(payload)
+            self._send_json(result, status=status)
+            return
+
+        if path == "/api/scenario-builder":
+            payload = self._read_json_body()
+            self._send_json(api_scenario_builder(payload))
+            return
+
         self._send_json({"error": "Not found"}, status=404)
 
     def do_PUT(self) -> None:
@@ -2195,6 +3066,17 @@ class ManualTestRequestHandler(BaseHTTPRequestHandler):
             self._send_json(result, status=status)
             return
 
+        # PUT /api/approval-templates/{id}
+        if path.startswith("/api/approval-templates/"):
+            try:
+                tpl_id = int(path.split("/api/approval-templates/")[1])
+            except (ValueError, IndexError):
+                self._send_json({"error": "Invalid template ID."}, status=400)
+                return
+            result, status = api_update_approval_template(tpl_id, payload)
+            self._send_json(result, status=status)
+            return
+
         self._send_json({"error": "Not found"}, status=404)
 
     def do_DELETE(self) -> None:
@@ -2255,6 +3137,32 @@ class ManualTestRequestHandler(BaseHTTPRequestHandler):
             result, status = api_delete_org_unit(org_unit_id)
             self._send_json(result, status=status)
             return
+
+        # DELETE /api/approval-templates/{id}
+        if path.startswith("/api/approval-templates/"):
+            try:
+                tpl_id = int(path.split("/api/approval-templates/")[1])
+            except (ValueError, IndexError):
+                self._send_json({"error": "Invalid template ID."}, status=400)
+                return
+            result, status = api_delete_approval_template(tpl_id)
+            self._send_json(result, status=status)
+            return
+
+        # DELETE /api/overlays/{type}/{id}
+        if path.startswith("/api/overlays/"):
+            parts = path.split("/")
+            # /api/overlays/{type}/{id}
+            if len(parts) >= 5:
+                try:
+                    overlay_type = parts[3]
+                    overlay_id = int(parts[4])
+                except (ValueError, IndexError):
+                    self._send_json({"error": "Invalid overlay path."}, status=400)
+                    return
+                result, status = api_delete_overlay(overlay_type, overlay_id)
+                self._send_json(result, status=status)
+                return
 
         self._send_json({"error": "Not found"}, status=404)
 

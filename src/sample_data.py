@@ -11,6 +11,7 @@ from src.models import (
     Action,
     ActionRoutingRule,
     ActingAssignment,
+    ApprovalRouteTemplate,
     CoHeadAssignment,
     CoverageAssignment,
     DelegationAssignment,
@@ -457,6 +458,82 @@ def _seed_executive_tier(session: Session) -> dict[str, Any]:
     }
 
 
+def seed_approval_templates(session: Session) -> None:
+    """Seed the standard approval route templates if they don't already exist."""
+    existing_codes = {
+        code for (code,) in session.query(ApprovalRouteTemplate.code).all()
+    }
+    templates = [
+        ApprovalRouteTemplate(
+            name="Primary Only",
+            code="primary_only",
+            description="Route to primary manager only.",
+            num_levels=1,
+            routing_type="standard",
+        ),
+        ApprovalRouteTemplate(
+            name="Primary + Second Level",
+            code="primary_second",
+            description="Route to primary manager then second level.",
+            num_levels=2,
+            routing_type="standard",
+        ),
+        ApprovalRouteTemplate(
+            name="Direct to Director",
+            code="direct_director",
+            description="Route directly to the top-level director.",
+            num_levels=1,
+            routing_type="direct_top",
+        ),
+        ApprovalRouteTemplate(
+            name="Department Head Only",
+            code="dept_head_only",
+            description="Route to the department head.",
+            num_levels=1,
+            routing_type="dept_head",
+        ),
+        ApprovalRouteTemplate(
+            name="Fallback Only",
+            code="fallback_only",
+            description="Route to fallback approver only.",
+            num_levels=1,
+            routing_type="fallback",
+        ),
+        ApprovalRouteTemplate(
+            name="Project Manager",
+            code="project_manager",
+            description="Route to project manager for project-scoped actions.",
+            num_levels=1,
+            routing_type="project",
+        ),
+        ApprovalRouteTemplate(
+            name="Co-head Either One",
+            code="cohead_either",
+            description="Either co-head may approve.",
+            num_levels=1,
+            routing_type="cohead_either",
+        ),
+        ApprovalRouteTemplate(
+            name="Co-head Both Required",
+            code="cohead_both",
+            description="Both co-heads must approve in sequence.",
+            num_levels=2,
+            routing_type="cohead_both",
+        ),
+        ApprovalRouteTemplate(
+            name="Custom Chain",
+            code="custom_chain",
+            description="Custom 3-level approval chain.",
+            num_levels=3,
+            routing_type="custom",
+        ),
+    ]
+    for tpl in templates:
+        if tpl.code not in existing_codes:
+            session.add(tpl)
+    session.flush()
+
+
 def seed_sample_data(session: Session) -> dict[str, Any]:
     """Populate the database with Finance + HR sample data for the POC."""
     finance = Department(name="Finance", code="FIN")
@@ -841,6 +918,9 @@ def seed_sample_data(session: Session) -> dict[str, Any]:
     )
 
     session.commit()
+
+    # Seed approval route templates
+    seed_approval_templates(session)
 
     result: dict[str, Any] = {
         "finance": finance,

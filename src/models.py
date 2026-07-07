@@ -590,13 +590,39 @@ class AuditLog(Base):
     __tablename__ = "audit_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    entity_type: Mapped[str] = mapped_column(String(60), nullable=False)
+    entity_type: Mapped[str] = mapped_column(String(80), nullable=False)
     entity_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     action: Mapped[str] = mapped_column(String(80), nullable=False)
     details: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )
+    # Extended fields for the comprehensive audit trail
+    actor: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    entity_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    before_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    after_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_page: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    result: Mapped[str] = mapped_column(String(20), default="success", nullable=False)
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<AuditLog {self.entity_type}/{self.entity_id} {self.action!r}>"
+
+
+class ApprovalRouteTemplate(Base):
+    __tablename__ = "approval_route_templates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False, unique=True)
+    code: Mapped[str] = mapped_column(String(40), nullable=False, unique=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    num_levels: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    routing_type: Mapped[str] = mapped_column(String(40), default="standard", nullable=False)
+    allow_overlay: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    self_approval_handling: Mapped[str] = mapped_column(
+        String(40), default="escalate", nullable=False
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<ApprovalRouteTemplate {self.code!r}>"
