@@ -531,7 +531,7 @@ def seed_approval_templates(session: Session) -> None:
     for tpl in templates:
         if tpl.code not in existing_codes:
             session.add(tpl)
-    session.flush()
+    session.commit()
 
 
 def seed_sample_data(session: Session) -> dict[str, Any]:
