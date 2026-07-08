@@ -460,7 +460,7 @@ def build_bootstrap_payload() -> dict[str, Any]:
         actions_raw = session.query(Action).order_by(Action.name).all()
         return {
             "departments": [
-                {"code": d.code, "name": d.name} for d in departments
+                {"id": d.id, "code": d.code, "name": d.name} for d in departments
             ],
             "actions": [
                 {"code": a.code, "name": a.name} for a in actions_raw
