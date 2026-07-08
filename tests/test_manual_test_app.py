@@ -1,5 +1,6 @@
 import pytest
 
+import src.manual_test_app as manual_test_app
 from src.manual_test_app import (
     ADVANCED_SCENARIOS,
     BUSINESS_CASES,
@@ -237,6 +238,50 @@ def test_delete_user_blocked_when_referenced():
     deleted, status = api_delete_user(peter["id"])
     assert status == 400
     assert "cannot delete user" in deleted["error"].lower()
+
+
+def test_delete_user_returns_500_and_rolls_back_on_exception(monkeypatch):
+    class _DummyUser:
+        id = 999
+
+    class _DummyQuery:
+        def filter(self, *_args, **_kwargs):
+            return self
+
+        def count(self):
+            return 0
+
+    class _DummySession:
+        def __init__(self):
+            self.rollback_called = False
+            self.close_called = False
+
+        def get(self, _model, _user_id):
+            return _DummyUser()
+
+        def query(self, _model):
+            return _DummyQuery()
+
+        def delete(self, _obj):
+            raise RuntimeError("forced delete failure")
+
+        def commit(self):
+            return None
+
+        def rollback(self):
+            self.rollback_called = True
+
+        def close(self):
+            self.close_called = True
+
+    session = _DummySession()
+    monkeypatch.setattr(manual_test_app, "_get_session", lambda: session)
+
+    result, status = api_delete_user(999)
+    assert status == 500
+    assert "forced delete failure" in result["error"]
+    assert session.rollback_called is True
+    assert session.close_called is True
 
 
 def test_get_seed_data_returns_all_entity_types():
