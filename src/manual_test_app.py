@@ -793,6 +793,12 @@ def api_update_user(user_id: int, body: dict[str, Any]) -> tuple[dict[str, Any],
                     )
                 session.commit()
                 session.refresh(user)
+            elif "org_unit_id" in body:
+                # org_unit_id was explicitly set to None — clear all active memberships.
+                for m in user.org_unit_memberships:
+                    m.is_active = False
+                session.commit()
+                session.refresh(user)
 
         return {"status": "ok", "user": _serialize_user(user)}, 200
     except Exception as exc:
@@ -1584,6 +1590,27 @@ def api_update_diagram_node(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
             )
             if rl_status not in (200, 201):
                 return rl_result, rl_status
+        else:
+            # Clear the primary manager: deactivate all active primary reporting lines.
+            clear_session = _get_session()
+            try:
+                existing_lines = (
+                    clear_session.query(ReportingLine)
+                    .filter(
+                        ReportingLine.user_id == user_id,
+                        ReportingLine.is_primary.is_(True),
+                        ReportingLine.is_active.is_(True),
+                    )
+                    .all()
+                )
+                for line in existing_lines:
+                    line.is_active = False
+                clear_session.commit()
+            except Exception as exc:
+                clear_session.rollback()
+                return {"error": str(exc)}, 500
+            finally:
+                clear_session.close()
 
     if errors:
         return {"errors": errors}, 400

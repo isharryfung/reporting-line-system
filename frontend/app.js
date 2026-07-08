@@ -15,6 +15,8 @@ let selectedCaseId = null;
 let fixedTeamOrderByDept = {};
 let fixedTeamWidthByKey = {};
 let fixedDeptStartXByCode = {};
+let fixedNodeOffsetByKey = {};
+let fixedNodeAbsoluteXByKey = {};
 
 const ADMIN_ROLE = 'POC Tester/System Admin';
 const OVERLAY_TYPE_LABELS = {
@@ -1870,16 +1872,13 @@ async function saveSidebarChanges() {
     is_active: byId('sidebar-profile-active').checked,
   };
   const orgUnitId = byId('sidebar-profile-org-unit').value;
-  if (orgUnitId) body.org_unit_id = Number(orgUnitId);
+  body.org_unit_id = orgUnitId ? Number(orgUnitId) : null;
   const managerId = byId('sidebar-profile-manager').value;
   body.manager_id = managerId ? Number(managerId) : null;
 
   try {
     await api('/api/diagram/update-node', { method: 'POST', body });
     await refreshAfterMutation('User updated from diagram.');
-    await loadDepartmentDiagram();
-    const refreshed = diagramData?.users?.find((user) => String(user.id) === String(body.user_id));
-    if (refreshed) openDiagramSidebar(refreshed, true);
   } catch (error) {
     showToast(error.message, 'error');
   }
@@ -1894,6 +1893,7 @@ function highlightActionRoute() {
   }
   if (!selectedNode) {
     showToast('Select a user node first, then choose an action route to highlight.', 'info');
+    byId('action-highlight-select').value = '';
     return;
   }
   setSidebarTabActive('route');
@@ -2646,7 +2646,6 @@ async function saveUser() {
     }
     closeModal('user-modal');
     await refreshAfterMutation('User created.');
-    if (currentPage === 'dept-diagram') await loadDepartmentDiagram();
   } catch (error) {
     showToast(error.message, 'error');
   }
