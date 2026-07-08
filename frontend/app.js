@@ -1819,9 +1819,17 @@ function renderSidebarOverlays() {
       .filter((item) => String(item.from_user_id) === String(selectedNode.id) || String(item.to_user_id) === String(selectedNode.id))
       .map((item) => ({ ...item, overlay_type: type }))
   );
-  container.innerHTML = items.length
-    ? `<ul>${items.map((item) => `<li><strong>${escHtml(OVERLAY_TYPE_LABELS[item.overlay_type] || item.overlay_type)}</strong>: ${escHtml(item.from_user_name || '—')} → ${escHtml(item.to_user_name || '—')} (${escHtml(formatDate(item.effective_from))} to ${escHtml(formatDate(item.effective_to))})</li>`).join('')}</ul>`
-    : '<p class="text-muted">No overlays for this user.</p>';
+  const canAddOverlay = isAdminRole();
+  container.innerHTML = `
+    <div class="form-group">
+      <button class="btn btn-primary btn-sm" id="sidebar-add-overlay-btn" ${canAddOverlay ? '' : 'disabled'}>Add Overlay</button>
+      ${canAddOverlay ? '' : '<p class="text-muted" style="margin-top: 0.5rem;">Admin role required to add overlays.</p>'}
+    </div>
+    ${items.length
+      ? `<ul>${items.map((item) => `<li><strong>${escHtml(OVERLAY_TYPE_LABELS[item.overlay_type] || item.overlay_type)}</strong>: ${escHtml(item.from_user_name || '—')} → ${escHtml(item.to_user_name || '—')} (${escHtml(formatDate(item.effective_from))} to ${escHtml(formatDate(item.effective_to))})</li>`).join('')}</ul>`
+      : '<p class="text-muted">No overlays for this user.</p>'}
+  `;
+  byId('sidebar-add-overlay-btn')?.addEventListener('click', showAddOverlayModalForSelectedUser);
 }
 
 async function renderSidebarHistory() {
@@ -1963,15 +1971,31 @@ async function loadOverlays() {
   updateRoleUi();
 }
 
-function showAddOverlayModal() {
+function showAddOverlayModal(prefill = {}) {
   if (!requireAdmin('add overlays')) return;
+  const fallbackFromUserId = allUsers()[0] ? String(allUsers()[0].id) : '';
+  const fallbackToUser = allUsers().find((user) => String(user.id) !== String(prefill.from_user_id));
+  const fallbackToUserId = fallbackToUser ? String(fallbackToUser.id) : fallbackFromUserId;
   byId('overlay-type').value = 'acting';
-  byId('overlay-from-user').value = allUsers()[0] ? String(allUsers()[0].id) : '';
-  byId('overlay-to-user').value = allUsers()[1] ? String(allUsers()[1].id) : byId('overlay-from-user').value;
-  byId('overlay-dept').value = allDepartments()[0] ? String(allDepartments()[0].id) : '';
+  byId('overlay-from-user').value = prefill.from_user_id ? String(prefill.from_user_id) : fallbackFromUserId;
+  byId('overlay-to-user').value = prefill.to_user_id ? String(prefill.to_user_id) : fallbackToUserId;
+  byId('overlay-dept').value = prefill.dept_id ? String(prefill.dept_id) : (allDepartments()[0] ? String(allDepartments()[0].id) : '');
   byId('overlay-from').value = '';
   byId('overlay-to').value = '';
   openModal('overlay-modal');
+}
+
+function showAddOverlayModalForSelectedUser() {
+  if (!selectedNode) {
+    showToast('Select a user node first.', 'info');
+    return;
+  }
+  const fallbackToUser = allUsers().find((user) => String(user.id) !== String(selectedNode.id));
+  showAddOverlayModal({
+    from_user_id: selectedNode.id,
+    to_user_id: fallbackToUser?.id || selectedNode.id,
+    dept_id: selectedNode.department_id,
+  });
 }
 
 async function saveOverlay() {
