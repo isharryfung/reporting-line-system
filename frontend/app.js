@@ -2426,7 +2426,10 @@ function renderSeedUsers() {
           <td><input data-field="email" value="${escHtml(user.email)}"></td>
           <td><select data-field="dept_level_id">${(seedData.dept_levels || []).map((level) => `<option value="${level.id}" ${String(level.id) === String(user.dept_level_id) ? 'selected' : ''}>${escHtml(level.dept_name)} — ${escHtml(level.level_name)} (L${level.level_rank})</option>`).join('')}</select></td>
           <td><input type="checkbox" data-field="is_active" ${user.is_active ? 'checked' : ''}></td>
-          <td><button class="btn btn-primary btn-sm save-seed-user">Save</button></td>
+          <td>
+            <button class="btn btn-primary btn-sm save-seed-user">Save</button>
+            <button class="btn btn-danger btn-sm delete-seed-user">Delete</button>
+          </td>
         </tr>`).join('')}</tbody>
       <tfoot><tr><td>New</td><td><input id="seed-new-user-name"></td><td><input id="seed-new-user-email"></td><td><select id="seed-new-user-level">${levelOptions}</select></td><td>—</td><td><button class="btn btn-primary btn-sm" id="seed-add-user">Add</button></td></tr></tfoot>
     </table>
@@ -2446,6 +2449,13 @@ function renderSeedUsers() {
       await loadSeedData();
     } catch (error) { showToast(error.message, 'error'); }
   });
+  qsa('.delete-seed-user', container).forEach((button) => button.addEventListener('click', async () => {
+    try {
+      await api(`/api/users/${button.closest('tr').dataset.id}`, { method: 'DELETE' });
+      await refreshAfterMutation('User deleted.');
+      await loadSeedData();
+    } catch (error) { showToast(error.message, 'error'); }
+  }));
 }
 
 function renderSeedReportingLines() {

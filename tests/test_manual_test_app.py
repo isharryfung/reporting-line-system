@@ -15,6 +15,7 @@ from src.manual_test_app import (
     api_delete_department,
     api_delete_dept_level,
     api_delete_org_unit,
+    api_delete_user,
     api_update_action,
     api_update_department,
     api_update_diagram_node,
@@ -207,6 +208,35 @@ def test_create_user_appears_in_bootstrap():
 
     payload = build_bootstrap_payload()
     assert any(u["name"] == "TestUser" for u in payload["users"])
+
+
+def test_delete_user_removes_unreferenced_user():
+    seed = get_seed_data()
+    fin_officer_level = next(
+        lv for lv in seed["dept_levels"] if lv["level_name"] == "Finance Officer"
+    )
+    created, status = api_create_user(
+        {
+            "name": "Temp Delete",
+            "email": "temp.delete@university.edu",
+            "dept_level_id": fin_officer_level["id"],
+        }
+    )
+    assert status == 201
+    user_id = created["user"]["id"]
+
+    deleted, status = api_delete_user(user_id)
+    assert status == 200
+    assert deleted["status"] == "ok"
+    assert not any(u["id"] == user_id for u in get_seed_data()["users"])
+
+
+def test_delete_user_blocked_when_referenced():
+    seed = get_seed_data()
+    peter = next(u for u in seed["users"] if u["name"] == "Peter")
+    deleted, status = api_delete_user(peter["id"])
+    assert status == 400
+    assert "cannot delete user" in deleted["error"].lower()
 
 
 def test_get_seed_data_returns_all_entity_types():
@@ -858,4 +888,3 @@ def test_stale_persisted_db_missing_acting_overlay_is_reseeded(tmp_path, monkeyp
     )
     session.close()
     assert itso_acting == 1
-

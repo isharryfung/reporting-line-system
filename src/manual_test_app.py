@@ -17,8 +17,11 @@ from src.models import (
     Action,
     ActionRoutingRule,
     ActingAssignment,
+    ApprovalRequest,
+    ApprovalStep,
     ApprovalRouteTemplate,
     AuditLog,
+    CoHeadAssignment,
     CoverageAssignment,
     DelegationAssignment,
     Department,
@@ -27,6 +30,8 @@ from src.models import (
     HandoverOverlap,
     OrgUnit,
     OrgUnitMembership,
+    ProjectAssignment,
+    ProjectReportingLine,
     ReportingLine,
     User,
 )
@@ -814,6 +819,123 @@ def api_create_user(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
         session.commit()
         session.refresh(user)
         return {"status": "ok", "user": _serialize_user(user)}, 201
+    except Exception as exc:
+        session.rollback()
+        return {"error": str(exc)}, 500
+    finally:
+        session.close()
+
+
+def api_delete_user(user_id: int) -> tuple[dict[str, Any], int]:
+    """Delete a user if it is not referenced by dependent records."""
+    session = _get_session()
+    try:
+        user = session.get(User, user_id)
+        if user is None:
+            return {"error": f"User {user_id} not found."}, 404
+
+        dependency_checks: list[tuple[str, int]] = [
+            (
+                "reporting lines",
+                session.query(ReportingLine)
+                .filter(
+                    (ReportingLine.user_id == user_id) | (ReportingLine.manager_id == user_id)
+                )
+                .count(),
+            ),
+            (
+                "org unit memberships",
+                session.query(OrgUnitMembership)
+                .filter(OrgUnitMembership.user_id == user_id)
+                .count(),
+            ),
+            (
+                "department fallback rules",
+                session.query(DepartmentFallbackRule)
+                .filter(DepartmentFallbackRule.fallback_user_id == user_id)
+                .count(),
+            ),
+            (
+                "acting assignments",
+                session.query(ActingAssignment)
+                .filter(
+                    (ActingAssignment.principal_user_id == user_id)
+                    | (ActingAssignment.acting_user_id == user_id)
+                )
+                .count(),
+            ),
+            (
+                "coverage assignments",
+                session.query(CoverageAssignment)
+                .filter(
+                    (CoverageAssignment.covered_user_id == user_id)
+                    | (CoverageAssignment.coverage_user_id == user_id)
+                )
+                .count(),
+            ),
+            (
+                "delegation assignments",
+                session.query(DelegationAssignment)
+                .filter(
+                    (DelegationAssignment.delegator_user_id == user_id)
+                    | (DelegationAssignment.delegate_user_id == user_id)
+                )
+                .count(),
+            ),
+            (
+                "handover overlaps",
+                session.query(HandoverOverlap)
+                .filter(
+                    (HandoverOverlap.requester_user_id == user_id)
+                    | (HandoverOverlap.old_approver_id == user_id)
+                    | (HandoverOverlap.new_approver_id == user_id)
+                )
+                .count(),
+            ),
+            (
+                "project assignments",
+                session.query(ProjectAssignment)
+                .filter(ProjectAssignment.user_id == user_id)
+                .count(),
+            ),
+            (
+                "project reporting lines",
+                session.query(ProjectReportingLine)
+                .filter(
+                    (ProjectReportingLine.user_id == user_id)
+                    | (ProjectReportingLine.project_manager_id == user_id)
+                )
+                .count(),
+            ),
+            (
+                "co-head assignments",
+                session.query(CoHeadAssignment)
+                .filter(CoHeadAssignment.user_id == user_id)
+                .count(),
+            ),
+            (
+                "approval requests",
+                session.query(ApprovalRequest)
+                .filter(ApprovalRequest.requester_id == user_id)
+                .count(),
+            ),
+            (
+                "approval steps",
+                session.query(ApprovalStep)
+                .filter(ApprovalStep.approver_id == user_id)
+                .count(),
+            ),
+        ]
+
+        blockers = [f"{count} {label}" for label, count in dependency_checks if count > 0]
+        if blockers:
+            return {
+                "error": f"Cannot delete user: referenced by {', '.join(blockers)}."
+            }, 400
+
+        session.delete(user)
+        session.commit()
+        return {"status": "ok"}, 200
     except Exception as exc:
         session.rollback()
         return {"error": str(exc)}, 500
@@ -3091,6 +3213,17 @@ class ManualTestRequestHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "Invalid line ID."}, status=400)
                 return
             result, status = api_delete_reporting_line(line_id)
+            self._send_json(result, status=status)
+            return
+
+        # DELETE /api/users/{id}
+        if path.startswith("/api/users/"):
+            try:
+                user_id = int(path.split("/api/users/")[1])
+            except (ValueError, IndexError):
+                self._send_json({"error": "Invalid user ID."}, status=400)
+                return
+            result, status = api_delete_user(user_id)
             self._send_json(result, status=status)
             return
 
