@@ -1513,10 +1513,14 @@ function drawDiagram(svg, users, options) {
   renderedUsers.forEach((u) => {
     const pos = posMap[u.id];
     if (!pos) return;
+    const classes = ["diagram-node"];
+    if (selectedId != null && selectedId === u.id) classes.push("selected");
+    if (u.active === false) classes.push("inactive");
     const g = document.createElementNS(ns, "g");
-    g.setAttribute("class", "diagram-node" + (selectedId != null && selectedId === u.id ? " selected" : ""));
+    g.setAttribute("class", classes.join(" "));
     g.setAttribute("transform", `translate(${pos.x},${pos.y})`);
     g.dataset.userId = u.id;
+    g.dataset.levelRank = String(u.level_rank ?? "");
 
     const rect = document.createElementNS(ns, "rect");
     rect.setAttribute("width", NODE_W);
@@ -1596,7 +1600,12 @@ function renderLevelLabels() {
   if (!container || !diagramData) return;
   const labels = [...(diagramData.levels || [])]
     .sort((a, b) => a.level_rank - b.level_rank)
-    .map((level) => `<span class="badge badge-secondary">L${level.level_rank} ${escHtml(level.level_name)}</span>`)
+    .map((level) => `
+      <div class="level-label">
+        <span class="level-label-rank">L${level.level_rank}</span>
+        <span class="level-label-name">${escHtml(level.level_name)}</span>
+      </div>
+    `)
     .join(' ');
   container.innerHTML = labels;
 }

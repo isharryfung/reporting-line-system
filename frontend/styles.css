@@ -610,15 +610,32 @@ body {
     padding: 20px 10px;
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 12px;
 }
 
 .level-label {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-muted);
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    color: var(--text);
     text-align: center;
-    padding: 5px;
+    padding: 10px 8px;
+}
+
+.level-label-rank {
+    display: block;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--primary);
+    margin-bottom: 4px;
+}
+
+.level-label-name {
+    display: block;
+    font-size: 11px;
+    line-height: 1.35;
+    color: var(--text-muted);
 }
 
 .svg-container {
@@ -639,6 +656,48 @@ body {
     opacity: 0.3;
 }
 
+.layer-band {
+    stroke: none;
+}
+
+.layer-band-1 {
+    fill: #ede9fe;
+}
+
+.layer-band-2 {
+    fill: #dbeafe;
+}
+
+.layer-band-3 {
+    fill: #f8fafc;
+}
+
+.layer-band-4 {
+    fill: #f8fafc;
+}
+
+.layer-band-label,
+.dept-label,
+.team-label,
+.level-label {
+    font-family: inherit;
+}
+
+.layer-band-label {
+    font-size: 12px;
+    font-weight: 700;
+    fill: var(--text-muted);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.dept-label {
+    font-size: 15px;
+    font-weight: 700;
+    fill: var(--text);
+    text-anchor: middle;
+}
+
 .team-box {
     fill: white;
     stroke: var(--border);
@@ -649,49 +708,113 @@ body {
     font-size: 14px;
     font-weight: 600;
     fill: var(--text);
+    text-anchor: middle;
 }
 
+.dept-separator {
+    stroke: #cbd5e1;
+    stroke-width: 1.5;
+    stroke-dasharray: 6 6;
+}
+
+.team-separator {
+    stroke: #e2e8f0;
+    stroke-width: 1;
+    stroke-dasharray: 4 6;
+}
+
+.diagram-node,
 .user-node {
     cursor: pointer;
     transition: all 0.2s;
 }
 
+.diagram-node:hover rect,
 .user-node:hover rect {
     stroke-width: 3;
     filter: brightness(1.1);
 }
 
+.diagram-node.selected rect,
 .user-node.selected rect {
     stroke: var(--primary);
     stroke-width: 3;
 }
 
+.diagram-node.inactive rect,
 .user-node.inactive rect {
     fill: var(--node-inactive);
     opacity: 0.6;
 }
 
+.diagram-node rect,
 .user-node rect {
-    stroke: #333;
+    fill: var(--node-manager);
+    stroke: #1e293b;
     stroke-width: 2;
 }
 
+.diagram-node[data-level-rank="1"] rect,
+.diagram-node[data-level-rank="2"] rect,
+.diagram-node[data-level-rank="3"] rect {
+    fill: var(--node-executive);
+}
+
+.diagram-node[data-level-rank="4"] rect,
+.diagram-node rect.top-level {
+    fill: var(--node-director);
+}
+
+.diagram-node[data-level-rank="5"] rect,
+.diagram-node[data-level-rank="6"] rect,
+.diagram-node[data-level-rank="7"] rect {
+    fill: var(--node-manager);
+}
+
+.diagram-node[data-level-rank="8"] rect,
+.diagram-node[data-level-rank="9"] rect {
+    fill: var(--node-staff);
+}
+
+.node-name,
 .user-name {
     font-size: 13px;
     font-weight: 600;
     fill: white;
+    text-anchor: middle;
 }
 
+.node-level,
 .user-level {
     font-size: 11px;
     fill: rgba(255, 255, 255, 0.9);
+    text-anchor: middle;
 }
 
+.diagram-edge,
 .reporting-line {
     stroke: #94a3b8;
     stroke-width: 2;
     fill: none;
-    marker-end: url(#arrowhead);
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.diagram-edge.highlighted {
+    stroke-width: 4;
+    filter: drop-shadow(0 0 2px rgba(37, 99, 235, 0.2));
+}
+
+.level-band {
+    stroke: #cbd5e1;
+    stroke-width: 1;
+    stroke-dasharray: 6 8;
+}
+
+#dept-diagram-svg .level-label {
+    font-size: 12px;
+    font-weight: 700;
+    fill: var(--text-muted);
 }
 
 .action-route-line {
