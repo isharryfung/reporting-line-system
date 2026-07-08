@@ -12,6 +12,7 @@ let loadingCount = 0;
 let currentHighlightedRouteNames = [];
 let currentDeptUsersForRender = [];
 let selectedCaseId = null;
+let fixedTeamOrderByDept = {};
 
 const ADMIN_ROLE = 'POC Tester/System Admin';
 const OVERLAY_TYPE_LABELS = {
