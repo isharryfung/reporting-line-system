@@ -1626,9 +1626,9 @@ function decorateDiagram(svg, users, { searchTerm = '', routeNames = [] } = {}) 
       rect.style.strokeWidth = '';
       rect.style.fill = '';
       if (highlightedNames.has(String(user?.name || '').toLowerCase())) {
-        rect.style.stroke = '#f59e0b';
+        rect.style.stroke = '#a78bfa';
         rect.style.strokeWidth = '3';
-        rect.style.fill = '#fff6d5';
+        rect.style.fill = '#4338ca';
       } else if (match && term) {
         rect.style.stroke = '#2563eb';
         rect.style.strokeWidth = '2';
