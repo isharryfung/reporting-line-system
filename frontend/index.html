@@ -278,21 +278,57 @@
 
         <!-- Page 8: ITSO 30 Cases -->
         <div id="page-itso-cases" class="page">
-            <div class="page-header">
-                <h1>ITSO 30 Test Cases</h1>
-            </div>
-            <div class="split-layout">
-                <div class="split-left">
-                    <div class="card">
-                        <h3>Test Cases</h3>
-                        <div class="case-list" id="case-list"></div>
+            <div class="itso-cases-layout">
+                <!-- Left sidebar -->
+                <div class="itso-cases-sidebar">
+                    <div class="itso-sidebar-filter">
+                        <label class="form-label">Category</label>
+                        <select id="itso-category-filter" class="form-control" onchange="filterItsoCases()">
+                            <option value="">All categories</option>
+                        </select>
+                    </div>
+                    <div class="itso-cases-nav">
+                        <button class="btn btn-secondary btn-sm" onclick="prevItsoCase()">Previous</button>
+                        <span id="itso-case-counter" class="itso-nav-counter">—</span>
+                        <button class="btn btn-secondary btn-sm" onclick="nextItsoCase()">Next</button>
+                    </div>
+                    <p class="itso-sidebar-hint">Click a case to see its target route; click a person in the diagram to inspect their upward chain.</p>
+                    <div class="case-list" id="case-list"></div>
+                    <div class="itso-legend">
+                        <h4>Legend</h4>
+                        <div class="itso-legend-item">
+                            <span class="itso-legend-line itso-legend-solid"></span>
+                            <span><strong>Solid line</strong> – Primary administrative manager<br><small>Normal reporting, payroll, leave, performance default</small></span>
+                        </div>
+                        <div class="itso-legend-item">
+                            <span class="itso-legend-line itso-legend-dotted"></span>
+                            <span><strong>Dotted line</strong> – Functional / project manager<br><small>Matrix reporting, tech lead, global head</small></span>
+                        </div>
+                        <div class="itso-legend-item">
+                            <span class="itso-legend-line itso-legend-dashed"></span>
+                            <span><strong>Dashed line</strong> – Temporary acting / coverage relationship<br><small>Acting head, maternity coverage, handover</small></span>
+                        </div>
+                        <div class="itso-legend-item">
+                            <span class="itso-legend-line itso-legend-thin"></span>
+                            <span><strong>Thin grey line</strong> – Delegation only<br><small>Executive assistant approval delegation</small></span>
+                        </div>
+                        <div class="itso-legend-item">
+                            <span class="itso-legend-badge">!</span>
+                            <span><strong>Red warning badge</strong> – Invalid / blocked relationship<br><small>Terminated approver, circular reporting, inactive approver</small></span>
+                        </div>
                     </div>
                 </div>
-                <div class="split-right">
-                    <div class="card">
-                        <div id="case-details">
-                            <p class="text-muted">Select a test case to view details</p>
+                <!-- Right main area -->
+                <div class="itso-cases-main">
+                    <p class="itso-cases-note">This tab mirrors Cases 1-33 as ITSO-only scenarios. Department structure is adjusted per case to better reflect the scenario intent while staying in ITSO. Nothing here is saved.</p>
+                    <div class="diagram-main itso-diagram-main">
+                        <div class="level-labels" id="itso-level-labels"></div>
+                        <div class="svg-container">
+                            <svg id="itso-case-svg"></svg>
                         </div>
+                    </div>
+                    <div id="case-details" class="itso-case-details">
+                        <p class="text-muted">Select a test case to view details.</p>
                     </div>
                 </div>
             </div>

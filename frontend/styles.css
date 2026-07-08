@@ -1285,6 +1285,234 @@ body {
 .mb-10 { margin-bottom: 10px; }
 .mb-20 { margin-bottom: 20px; }
 
+/* ITSO Cases Page Layout */
+.itso-cases-layout {
+    display: grid;
+    grid-template-columns: 290px 1fr;
+    gap: 0;
+    height: calc(100vh - 80px);
+    overflow: hidden;
+}
+
+.itso-cases-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 16px 12px;
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    background: var(--surface);
+}
+
+.itso-sidebar-filter {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.itso-cases-nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.itso-nav-counter {
+    flex: 1;
+    text-align: center;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.itso-sidebar-hint {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 0;
+    line-height: 1.4;
+}
+
+/* Override case-item for radio-button style */
+.itso-cases-sidebar .case-item {
+    padding: 8px 10px;
+    border-bottom: none;
+    border-radius: 6px;
+    margin-bottom: 2px;
+    justify-content: flex-start;
+}
+
+.itso-cases-sidebar .case-item.active {
+    background: #dbeafe;
+    border-left: 3px solid var(--primary);
+}
+
+.itso-cases-sidebar .case-group h4 {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin: 10px 0 4px;
+}
+
+.case-item-radio-label {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    cursor: pointer;
+    width: 100%;
+    font-size: 13px;
+}
+
+.case-item-radio-label input[type="radio"] {
+    margin: 0;
+    flex-shrink: 0;
+}
+
+.case-item-number {
+    color: var(--text-muted);
+    font-size: 12px;
+    min-width: 22px;
+}
+
+/* Legend */
+.itso-legend {
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+    margin-top: 8px;
+}
+
+.itso-legend h4 {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+}
+
+.itso-legend-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 8px;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.itso-legend-item small {
+    color: var(--text-muted);
+    display: block;
+}
+
+.itso-legend-line {
+    display: inline-block;
+    width: 32px;
+    height: 2px;
+    flex-shrink: 0;
+    margin-top: 6px;
+}
+
+.itso-legend-solid {
+    background: #374151;
+}
+
+.itso-legend-dotted {
+    border-top: 2px dotted #374151;
+    background: none;
+    height: 0;
+}
+
+.itso-legend-dashed {
+    border-top: 2px dashed #f59e0b;
+    background: none;
+    height: 0;
+}
+
+.itso-legend-thin {
+    background: #9ca3af;
+    height: 1px;
+}
+
+.itso-legend-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--danger);
+    color: white;
+    font-size: 11px;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+/* Right main area */
+.itso-cases-main {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.itso-cases-note {
+    font-size: 12px;
+    color: var(--text-muted);
+    padding: 8px 16px;
+    background: #f8fafc;
+    border-bottom: 1px solid var(--border);
+    margin: 0;
+    text-align: right;
+}
+
+.itso-diagram-main {
+    flex: 1;
+    min-height: 400px;
+    border-bottom: 2px solid var(--border);
+}
+
+.itso-case-details {
+    padding: 20px 24px;
+    overflow-y: auto;
+    max-height: 40vh;
+    background: white;
+}
+
+.itso-case-title {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 12px;
+    color: var(--text);
+}
+
+.itso-case-badge {
+    display: inline-block;
+    margin-bottom: 12px;
+    font-size: 12px;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.itso-case-section {
+    margin-bottom: 14px;
+}
+
+.itso-case-section-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+}
+
+.itso-case-route {
+    font-family: monospace;
+    background: var(--surface);
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 13px;
+    margin-bottom: 4px;
+}
+
 /* Responsive */
 @media (max-width: 1200px) {
     .nav-sections {
@@ -1302,6 +1530,10 @@ body {
     }
     
     .split-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .itso-cases-layout {
         grid-template-columns: 1fr;
     }
 }

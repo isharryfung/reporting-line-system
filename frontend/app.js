@@ -2104,11 +2104,52 @@ const THIRTY_CASES = [
   { id: 33, category: "Corporate Tier (Layer 1)", title: "Cross-Department Roll-Up", focus: "School", focusDept: "EXEC", scenario: "Both ITSO and HRO department heads roll up to the same School position.", method: "Multiple department heads report into one shared Layer 1 School.", target: [["Ivan", "School"], ["Hannah", "School"]] },
 ];
 
+// Cached dept diagram data keyed by dept code for the ITSO cases page.
+const _itsoCaseDiagramCache = {};
+
+function _getItsoCasesFiltered() {
+  const cat = byId('itso-category-filter')?.value || '';
+  return cat ? THIRTY_CASES.filter((c) => c.category === cat) : THIRTY_CASES;
+}
+
 function initItsoCases() {
   const list = byId('case-list');
   const details = byId('case-details');
   if (!list || !details) return;
-  const grouped = THIRTY_CASES.reduce((acc, item) => {
+
+  // Populate category filter
+  const catFilter = byId('itso-category-filter');
+  if (catFilter && catFilter.options.length <= 1) {
+    const categories = [...new Set(THIRTY_CASES.map((c) => c.category))];
+    categories.forEach((cat) => {
+      const opt = document.createElement('option');
+      opt.value = cat;
+      opt.textContent = cat;
+      catFilter.appendChild(opt);
+    });
+  }
+
+  _renderItsoCaseList();
+
+  if (selectedCaseId) {
+    const item = THIRTY_CASES.find((entry) => entry.id === selectedCaseId);
+    if (item) renderItsoCaseDetails(item);
+  } else {
+    details.innerHTML = '<p class="text-muted">Select a test case to view details.</p>';
+    byId('itso-case-counter').textContent = '—';
+    // Clear diagram
+    const svg = byId('itso-case-svg');
+    if (svg) svg.innerHTML = '';
+    const levelLabels = byId('itso-level-labels');
+    if (levelLabels) levelLabels.innerHTML = '';
+  }
+}
+
+function _renderItsoCaseList() {
+  const list = byId('case-list');
+  if (!list) return;
+  const filtered = _getItsoCasesFiltered();
+  const grouped = filtered.reduce((acc, item) => {
     (acc[item.category] = acc[item.category] || []).push(item);
     return acc;
   }, {});
@@ -2117,43 +2158,165 @@ function initItsoCases() {
       <div class="case-group">
         <h4>${escHtml(category)}</h4>
         ${cases
-          .map((item) => `<button class="btn btn-secondary case-item ${selectedCaseId === item.id ? 'active' : ''}" data-id="${item.id}">${item.id}. ${escHtml(item.title)}</button>`)
+          .map((item) => `
+            <div class="case-item ${selectedCaseId === item.id ? 'active' : ''}" data-id="${item.id}" role="button" tabindex="0">
+              <label class="case-item-radio-label">
+                <input type="radio" name="itso-case" value="${item.id}" ${selectedCaseId === item.id ? 'checked' : ''}>
+                <span class="case-item-number">${item.id}.</span>
+                <span class="case-item-title">${escHtml(item.title)}</span>
+              </label>
+            </div>
+          `)
           .join('')}
       </div>
     `)
     .join('');
 
-  qsa('.case-item', list).forEach((button) => {
-    button.addEventListener('click', () => showItsoCase(Number(button.dataset.id)));
+  qsa('.case-item', list).forEach((div) => {
+    div.addEventListener('click', () => showItsoCase(Number(div.dataset.id)));
+    div.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') showItsoCase(Number(div.dataset.id)); });
   });
 
-  if (selectedCaseId) {
-    const item = THIRTY_CASES.find((entry) => entry.id === selectedCaseId);
-    if (item) renderItsoCaseDetails(item);
-  } else {
-    details.innerHTML = '<p class="text-muted">Select a test case to view details.</p>';
+  _updateItsoCaseCounter();
+}
+
+function _updateItsoCaseCounter() {
+  const counter = byId('itso-case-counter');
+  if (!counter) return;
+  if (!selectedCaseId) { counter.textContent = '—'; return; }
+  const filtered = _getItsoCasesFiltered();
+  const idx = filtered.findIndex((c) => c.id === selectedCaseId);
+  if (idx === -1) { counter.textContent = '—'; return; }
+  counter.textContent = `Case ${idx + 1} of ${filtered.length} (ID ${selectedCaseId})`;
+}
+
+function filterItsoCases() {
+  _renderItsoCaseList();
+  // If current selection is not in filter, clear it
+  const filtered = _getItsoCasesFiltered();
+  if (selectedCaseId && !filtered.find((c) => c.id === selectedCaseId)) {
+    selectedCaseId = null;
+    const details = byId('case-details');
+    if (details) details.innerHTML = '<p class="text-muted">Select a test case to view details.</p>';
+    const svg = byId('itso-case-svg');
+    if (svg) svg.innerHTML = '';
+    const levelLabels = byId('itso-level-labels');
+    if (levelLabels) levelLabels.innerHTML = '';
   }
 }
 
-function renderItsoCaseDetails(item) {
-  byId('case-details').innerHTML = `
-    <h3>${item.id}. ${escHtml(item.title)}</h3>
-    <p><strong>Category:</strong> ${escHtml(item.category)}</p>
-    <p><strong>Scenario:</strong> ${escHtml(item.scenario)}</p>
-    <p><strong>Method:</strong> ${escHtml(item.method)}</p>
-    ${item.note ? `<p><strong>Note:</strong> ${escHtml(item.note)}</p>` : ''}
-    ${item.action ? `<p><strong>Action:</strong> ${escHtml(item.action)}</p>` : ''}
-    ${item.requestAt ? `<p><strong>Request At:</strong> ${escHtml(formatDateTime(item.requestAt))}</p>` : ''}
+function prevItsoCase() {
+  const filtered = _getItsoCasesFiltered();
+  if (!filtered.length) return;
+  const idx = filtered.findIndex((c) => c.id === selectedCaseId);
+  const prev = idx <= 0 ? filtered[filtered.length - 1] : filtered[idx - 1];
+  showItsoCase(prev.id);
+}
+
+function nextItsoCase() {
+  const filtered = _getItsoCasesFiltered();
+  if (!filtered.length) return;
+  const idx = filtered.findIndex((c) => c.id === selectedCaseId);
+  const next = idx === -1 || idx >= filtered.length - 1 ? filtered[0] : filtered[idx + 1];
+  showItsoCase(next.id);
+}
+
+async function renderItsoCaseDetails(item) {
+  const details = byId('case-details');
+  if (!details) return;
+
+  // Render case text details immediately
+  details.innerHTML = `
+    <h3 class="itso-case-title">${item.id}. ${escHtml(item.title)} <span class="text-muted">— ${escHtml(item.category)}</span></h3>
+    ${item.note ? `<p class="itso-case-badge badge badge-warning">${escHtml(item.note.split('.')[0])}</p>` : ''}
+    <div class="itso-case-section">
+      <p class="itso-case-section-label">DESCRIPTION</p>
+      <p>${escHtml(item.scenario)}</p>
+    </div>
+    <div class="itso-case-section">
+      <p class="itso-case-section-label">INTENTION</p>
+      <p>${escHtml(item.method)}</p>
+    </div>
+    ${item.target && item.target.length ? `
+      <div class="itso-case-section">
+        <p class="itso-case-section-label">EXPECTED ROUTE</p>
+        ${item.target.map((route) => `<p class="itso-case-route">${route.map((name) => escHtml(name)).join(' → ')}</p>`).join('')}
+      </div>
+    ` : ''}
+    ${item.action ? `<p class="text-muted" style="font-size:13px;">Action: ${escHtml(item.action)}</p>` : ''}
+    ${item.requestAt ? `<p class="text-muted" style="font-size:13px;">Request at: ${escHtml(formatDateTime(item.requestAt))}</p>` : ''}
   `;
+
+  // Load and render the department diagram
+  await _renderItsoCaseDiagram(item);
+}
+
+async function _renderItsoCaseDiagram(item) {
+  const svg = byId('itso-case-svg');
+  const levelLabels = byId('itso-level-labels');
+  if (!svg) return;
+
+  // Find dept by code
+  const dept = allDepartments().find((d) => d.code === item.focusDept);
+  if (!dept) {
+    svg.innerHTML = `<text x="20" y="30" style="font-size:13px;fill:#888">No diagram for dept code "${escHtml(item.focusDept)}".</text>`;
+    if (levelLabels) levelLabels.innerHTML = '';
+    return;
+  }
+
+  // Load diagram data (cached per dept code)
+  let data = _itsoCaseDiagramCache[item.focusDept];
+  if (!data) {
+    try {
+      data = await api(`/api/departments/${dept.id}/diagram-data`);
+      _itsoCaseDiagramCache[item.focusDept] = data;
+    } catch (err) {
+      svg.innerHTML = `<text x="20" y="30" style="font-size:13px;fill:#c00">Error loading diagram: ${escHtml(err.message)}</text>`;
+      if (levelLabels) levelLabels.innerHTML = '';
+      return;
+    }
+  }
+
+  // Render level labels
+  if (levelLabels) {
+    levelLabels.innerHTML = [...(data.levels || [])]
+      .sort((a, b) => a.level_rank - b.level_rank)
+      .map((level) => `
+        <div class="level-label">
+          <span class="level-label-rank">L${level.level_rank}</span>
+          <span class="level-label-name">${escHtml(level.level_name)}</span>
+        </div>
+      `)
+      .join('');
+  }
+
+  // Draw diagram
+  const users = normalizeUsersForDiagram(data.users, data.org_units);
+  const focusUser = users.find((u) => u.name === item.focus);
+  drawDiagram(svg, users, {
+    selectedId: focusUser?.id ?? null,
+    onNodeClick: () => {},
+    teamSections: true,
+    fixedAbsoluteNodeX: true,
+    fixedTeamSections: true,
+  });
+
+  // Highlight route
+  const routeNames = (item.target || []).flat();
+  decorateDiagram(svg, users, { routeNames });
 }
 
 function showItsoCase(caseId) {
   selectedCaseId = caseId;
   const item = THIRTY_CASES.find((entry) => entry.id === caseId);
   if (!item) return;
-  qsa('.case-item', byId('case-list')).forEach((button) => {
-    button.classList.toggle('active', Number(button.dataset.id) === caseId);
+  qsa('.case-item', byId('case-list')).forEach((div) => {
+    const isActive = Number(div.dataset.id) === caseId;
+    div.classList.toggle('active', isActive);
+    const radio = div.querySelector('input[type="radio"]');
+    if (radio) radio.checked = isActive;
   });
+  _updateItsoCaseCounter();
   renderItsoCaseDetails(item);
 }
 
@@ -2707,6 +2870,9 @@ Object.assign(window, {
   closeModal,
   openDeptDiagram,
   openITSOCases,
+  filterItsoCases,
+  prevItsoCase,
+  nextItsoCase,
   resetDatabase,
   showAddActionModal,
   saveAction,
