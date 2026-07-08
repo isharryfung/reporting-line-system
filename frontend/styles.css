@@ -673,13 +673,13 @@ body {
 }
 
 .layer-band-4 {
-    fill: #f8fafc;
+    fill: #fefce8;
 }
 
 .layer-band-label,
 .dept-label,
 .team-label,
-.level-label {
+.diagram-level-label {
     font-family: inherit;
 }
 
@@ -811,7 +811,7 @@ body {
     stroke-dasharray: 6 8;
 }
 
-#dept-diagram-svg .level-label {
+.diagram-level-label {
     font-size: 12px;
     font-weight: 700;
     fill: var(--text-muted);

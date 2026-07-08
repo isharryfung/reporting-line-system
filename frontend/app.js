@@ -1427,7 +1427,7 @@ function drawDiagram(svg, users, options) {
     const text = document.createElementNS(ns, "text");
     text.setAttribute("x", viewMinX + LEVEL_LABEL_X);
     text.setAttribute("y", y + NODE_H / 2 + 4);
-    text.setAttribute("class", "level-label");
+    text.setAttribute("class", "diagram-level-label");
     text.textContent = `L${rank}`;
     svg.appendChild(text);
   });
