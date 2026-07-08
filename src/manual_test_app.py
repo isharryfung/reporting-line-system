@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Session
 
 from src.database import create_engine_sqlite, get_session, init_db
@@ -139,6 +140,18 @@ def _seed_is_complete(session: Session) -> bool:
         .first()
     )
     if performance_review is None:
+        return False
+    # A database created before the extended audit-log columns were added (actor,
+    # entity_name, before_value, after_value, source_page, result) will fail at
+    # runtime with "no such column". Detect this by inspecting the live schema.
+    inspector = sa_inspect(session.bind)
+    existing_cols = {
+        col["name"] for col in inspector.get_columns("audit_logs")
+    }
+    required_audit_cols = {
+        "actor", "entity_name", "before_value", "after_value", "source_page", "result"
+    }
+    if not required_audit_cols.issubset(existing_cols):
         return False
     return True
 
