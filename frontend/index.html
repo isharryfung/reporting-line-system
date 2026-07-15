@@ -1,680 +1,643 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>University Reporting-Line System POC</title>
-    <link rel="stylesheet" href="/styles.css" />
-  </head>
-  <body>
-    <header class="hero">
-      <div>
-        <p class="eyebrow">University Reporting-Line System</p>
-        <h1>Department + Org-Unit Reporting POC</h1>
-        <p>
-          Explore the Finance and HR seed data, view and <strong>edit</strong> department org charts,
-          simulate action routing, and test team-lead edit permission rules.
-          Director = Level 4 · Senior Manager = Level 5 · Officer = Level 9.
-        </p>
-      </div>
-    </header>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reporting Line Management System</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay">
+        <div class="spinner"></div>
+    </div>
 
-    <!-- Tab navigation -->
-    <nav class="tab-bar">
-      <button class="tab-btn active" data-tab="overview">Overview</button>
-      <button class="tab-btn" data-tab="diagram">Diagram Editor</button>
-      <button class="tab-btn" data-tab="testcase-diagram">Test Case Diagram</button>
-      <button class="tab-btn" data-tab="itso-cases">ITSO 30 Cases</button>
-      <button class="tab-btn" data-tab="seed-editor">Seed Data Editor</button>
-      <button class="tab-btn" data-tab="simulation">Simulation</button>
-      <button class="tab-btn" data-tab="scenario-lab">Scenario Lab</button>
-      <button class="tab-btn" data-tab="cases">Business Cases</button>
+    <!-- Toast Notifications -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Top Navigation -->
+    <nav class="top-nav">
+        <div class="nav-content">
+            <div class="nav-sections">
+                <div class="nav-section">
+                    <span class="nav-section-label">Real Case Pages</span>
+                    <button class="nav-tab active" data-page="dashboard">Dashboard</button>
+                    <button class="nav-tab" data-page="action-management">Action Management</button>
+                    <button class="nav-tab" data-page="approval-templates">Approval Templates</button>
+                    <button class="nav-tab" data-page="dept-diagram">Dept Diagram</button>
+                    <button class="nav-tab" data-page="overlay-management">Overlay Management</button>
+                    <button class="nav-tab" data-page="audit-log">Audit Log</button>
+                    <button class="nav-tab" data-page="validation">Validation</button>
+                </div>
+                <div class="nav-section">
+                    <span class="nav-section-label">Testing Pages</span>
+                    <button class="nav-tab" data-page="itso-cases">ITSO 30 Cases</button>
+                    <button class="nav-tab" data-page="test-diagram">Test Case Diagram</button>
+                    <button class="nav-tab" data-page="scenario-builder">Scenario Builder</button>
+                    <button class="nav-tab" data-page="seed-data">Seed Data Editor</button>
+                </div>
+            </div>
+            <div class="nav-role">
+                <label for="role-select">View As:</label>
+                <select id="role-select">
+                    <option value="POC Tester/System Admin">POC Tester/System Admin</option>
+                    <option value="HRO Admin">HRO Admin</option>
+                    <option value="Department Admin">Department Admin</option>
+                    <option value="Team Lead">Team Lead</option>
+                    <option value="Normal Staff">Normal Staff</option>
+                </select>
+            </div>
+        </div>
     </nav>
 
-    <main class="layout">
-
-      <!-- ===== OVERVIEW TAB ===== -->
-      <div id="tab-overview" class="tab-content active">
-        <section class="card">
-          <h2>Scenario Summary</h2>
-          <ul id="notes"></ul>
-        </section>
-
-        <section class="card">
-          <h2>Seed Users</h2>
-          <div id="seed-users" class="pill-grid"></div>
-        </section>
-
-        <section class="card">
-          <div class="section-header">
-            <h2>Department Org Chart (read-only)</h2>
-            <label>
-              Department
-              <select id="department-select-overview"></select>
-            </label>
-          </div>
-          <div id="org-chart"></div>
-        </section>
-      </div>
-
-      <!-- ===== DIAGRAM EDITOR TAB ===== -->
-      <div id="tab-diagram" class="tab-content hidden">
-        <section class="card">
-          <div class="diagram-header">
-            <h2>Reporting-Line Diagram Editor</h2>
-            <p class="hint">
-              Click any node to open the edit panel. Edit name, level, department,
-              org-unit, team-lead flag, or reporting manager. Save to persist changes
-              and refresh the diagram. Circular reporting lines are detected and blocked.
-              Choose <strong>All Departments</strong> to view every department in one diagram.
-            </p>
-            <label class="inline-label">
-              Department
-              <select id="department-select-diagram"></select>
-            </label>
-          </div>
-          <div class="diagram-workspace">
-            <div class="diagram-container">
-              <svg id="diagram-svg" width="100%" height="540"></svg>
+    <!-- Main Content -->
+    <main id="main-content">
+        
+        <!-- Page 1: Dashboard -->
+        <div id="page-dashboard" class="page active">
+            <div class="page-header">
+                <h1>Dashboard</h1>
             </div>
-            <!-- Edit Panel -->
-            <aside id="edit-panel" class="edit-panel hidden">
-              <div class="edit-panel-header">
-                <h3 id="edit-panel-title">Edit Node</h3>
-                <button type="button" id="edit-panel-close" class="btn-icon">✕</button>
-              </div>
-              <form id="edit-node-form" class="stack">
-                <input type="hidden" id="edit-user-id" />
-                <label>
-                  Name
-                  <input type="text" id="edit-name" />
-                </label>
-                <label>
-                  Email
-                  <input type="email" id="edit-email" />
-                </label>
-                <label>
-                  Level
-                  <select id="edit-level"></select>
-                </label>
-                <label>
-                  Org Unit / Team
-                  <select id="edit-org-unit">
-                    <option value="">— none —</option>
-                  </select>
-                </label>
-                <label class="checkbox-label">
-                  <input type="checkbox" id="edit-team-lead" />
-                  Team Lead
-                </label>
-                <label>
-                  Primary Manager (reporting line)
-                  <select id="edit-manager">
-                    <option value="">— none / top-level —</option>
-                  </select>
-                </label>
-                <div id="edit-error" class="error-box hidden"></div>
-                <div class="button-row">
-                  <button type="submit" id="edit-save-btn">Save changes</button>
-                  <button type="button" id="edit-cancel-btn" class="btn-secondary">Cancel</button>
+            <div class="dashboard-cards">
+                <div class="card stat-card">
+                    <div class="stat-label">Departments</div>
+                    <div class="stat-value" id="stat-departments">-</div>
                 </div>
-              </form>
-            </aside>
-          </div>
-        </section>
-      </div>
-
-      <!-- ===== TEST CASE DIAGRAM TAB ===== -->
-      <div id="tab-testcase-diagram" class="tab-content hidden">
-        <section class="card">
-          <div class="diagram-header">
-            <h2>Test Case Diagram</h2>
-            <p class="hint">
-              Build a reporting-line diagram to test a case. Click any person to
-              select them as the requester — the resolved reporting line for that
-              person is described in plain wording under the diagram. You can also
-              <strong>temporarily</strong> change their reporting manager — edits here
-              are <strong>never saved</strong> to the POC state.
-            </p>
-            <div class="testcase-controls">
-              <label class="inline-label">
-                Department
-                <select id="department-select-testcase"></select>
-              </label>
-              <label class="inline-label">
-                Requester
-                <select id="testcase-requester"></select>
-              </label>
-              <button type="button" id="testcase-reset-btn" class="btn-secondary">
-                Reset diagram
-              </button>
+                <div class="card stat-card">
+                    <div class="stat-label">Employees</div>
+                    <div class="stat-value" id="stat-employees">-</div>
+                    <div class="stat-detail">
+                        <span class="stat-detail-item"><span class="badge badge-success">Active</span> <span id="stat-active">-</span></span>
+                        <span class="stat-detail-item"><span class="badge badge-secondary">Inactive</span> <span id="stat-inactive">-</span></span>
+                    </div>
+                </div>
+                <div class="card stat-card">
+                    <div class="stat-label">Active Overlays</div>
+                    <div class="stat-value" id="stat-overlays">-</div>
+                    <div class="stat-detail" id="overlay-breakdown"></div>
+                </div>
+                <div class="card stat-card">
+                    <div class="stat-label">Actions</div>
+                    <div class="stat-value" id="stat-actions">-</div>
+                </div>
+                <div class="card stat-card">
+                    <div class="stat-label">Validation Issues</div>
+                    <div class="stat-value" id="stat-validation">
+                        <span id="validation-count">-</span>
+                        <span id="validation-badge" class="badge badge-danger" style="display: none;">!</span>
+                    </div>
+                </div>
+                <div class="card stat-card">
+                    <div class="stat-label">Last Updated</div>
+                    <div class="stat-value small" id="stat-timestamp">-</div>
+                </div>
             </div>
-          </div>
-          <div class="diagram-workspace">
-            <div class="diagram-container diagram-container-tall">
-              <svg id="testcase-svg" width="100%" height="760"></svg>
-            </div>
-          </div>
 
-          <!-- Overlay controls: see how acting / delegation / project / co-head /
-               self-approval change the selected person's resolved approver line. -->
-          <div id="testcase-overlay-panel" class="testcase-overlay-panel">
-            <h3>Overlays (acting, delegation, project, co-head, self-approval)</h3>
-            <p class="hint">
-              Pick an action to resolve the selected person's approver line through the
-              routing engine, then add overlays to see how the result changes.
-              Co-head and self-approval-blocked behaviour appear automatically for the
-              chosen action. Overlays here are <strong>never saved</strong>.
-            </p>
-            <div class="testcase-overlay-controls">
-              <label class="inline-label">
-                Action
-                <select id="testcase-action">
-                  <option value="">— none (reporting line only) —</option>
+            <div class="dashboard-section">
+                <h2>Recent Changes</h2>
+                <div class="card">
+                    <div id="recent-changes-timeline" class="timeline"></div>
+                </div>
+            </div>
+
+            <div class="dashboard-actions">
+                <button class="btn btn-primary" onclick="openDeptDiagram()">Open Dept Diagram</button>
+                <button class="btn btn-primary" onclick="openITSOCases()">Run ITSO Cases</button>
+                <button class="btn btn-danger" onclick="resetDatabase()">Reset Database</button>
+            </div>
+        </div>
+
+        <!-- Page 2: Action Management -->
+        <div id="page-action-management" class="page">
+            <div class="page-header">
+                <h1>Action Management</h1>
+                <button class="btn btn-primary" id="add-action-btn" onclick="showAddActionModal()">Add Action</button>
+            </div>
+            <div class="role-notice" id="action-role-notice" style="display: none;"></div>
+            <div class="card">
+                <table class="data-table" id="actions-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Name</th>
+                            <th>Code</th>
+                            <th>Project Scoped</th>
+                            <th>Routing Rules</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Page 3: Approval Templates -->
+        <div id="page-approval-templates" class="page">
+            <div class="page-header">
+                <h1>Approval Templates</h1>
+                <button class="btn btn-primary" id="add-template-btn" onclick="showAddTemplateModal()">Add Template</button>
+            </div>
+            <div class="role-notice" id="template-role-notice" style="display: none;"></div>
+            <div class="templates-grid" id="templates-grid"></div>
+        </div>
+
+        <!-- Page 4: Department Diagram -->
+        <div id="page-dept-diagram" class="page">
+            <div class="page-header">
+                <h1>Department Diagram</h1>
+            </div>
+            <div class="diagram-controls">
+                <select id="dept-select" onchange="loadDepartmentDiagram()">
+                    <option value="">Select Department...</option>
                 </select>
-              </label>
-              <label class="inline-label">
-                Project code
-                <input type="text" id="testcase-project-code" placeholder="e.g. UTP" />
-              </label>
-              <label class="inline-label">
-                Request at
-                <input type="datetime-local" id="testcase-request-at" />
-              </label>
-              <button type="button" id="testcase-add-overlay-btn" class="btn-secondary">
-                + Add overlay
-              </button>
+                <button class="btn btn-primary" id="add-user-btn" onclick="showAddUserModal()">+ Add User</button>
+                <select id="action-highlight-select" onchange="highlightActionRoute()">
+                    <option value="">Highlight Action Route...</option>
+                </select>
+                <input type="search" id="user-search" placeholder="Search users..." oninput="searchUsers()">
             </div>
-            <div id="testcase-overlays" class="overlay-list"></div>
-          </div>
-
-          <!-- Reporting-line wording result, shown under the diagram -->
-          <div id="testcase-result" class="testcase-result">
-            <h3>Reporting line result</h3>
-            <p id="testcase-wording" class="testcase-wording">
-              Pick or click a person to see the reporting line result.
-            </p>
-            <ol id="testcase-steps" class="testcase-steps"></ol>
-            <div id="testcase-overlay-result" class="testcase-overlay-result hidden">
-              <h4>Overlay-resolved approver line</h4>
-              <p id="testcase-overlay-wording" class="testcase-wording"></p>
-              <ol id="testcase-overlay-steps" class="testcase-steps"></ol>
-            </div>
-          </div>
-
-          <!-- Temporary manager edit panel for the test-case diagram -->
-          <div id="testcase-edit-panel" class="testcase-edit-panel hidden">
-            <div class="edit-panel-header">
-              <h3 id="testcase-edit-title">Edit reporting manager</h3>
-              <button type="button" id="testcase-edit-close" class="btn-icon">✕</button>
-            </div>
-            <label>
-              Reports to (temporary)
-              <select id="testcase-edit-manager">
-                <option value="">— none / top-level —</option>
-              </select>
-            </label>
-            <div id="testcase-edit-error" class="error-box hidden"></div>
-            <div class="button-row">
-              <button type="button" id="testcase-edit-apply">Apply</button>
-              <button type="button" id="testcase-edit-cancel" class="btn-secondary">Cancel</button>
-            </div>
-          </div>
-        </section>
-      </div>
-
-      <!-- ===== ITSO 30 CASES TAB ===== -->
-      <div id="tab-itso-cases" class="tab-content hidden">
-        <section class="card">
-          <div class="diagram-header">
-            <h2>ITSO 30 Cases (Case 1-30)</h2>
-            <p class="hint">
-              This tab mirrors Cases 1-30 as <strong>ITSO-only</strong> scenarios.
-              Department structure is adjusted per case to better reflect the scenario
-              intent while staying in ITSO. Nothing here is saved.
-            </p>
-          </div>
-          <div class="thirty-cases-workspace">
-            <aside class="thirty-cases-sidebar">
-              <div class="thirty-cases-list">
-                <label class="thirty-cases-filter">
-                  Category
-                  <select id="itso-cases-filter">
-                    <option value="">All categories</option>
-                  </select>
-                </label>
-                <div class="itso-cases-review-nav">
-                  <button type="button" id="itso-cases-prev" class="btn-secondary btn-small">Previous</button>
-                  <span id="itso-cases-position" class="itso-cases-position">Case 0 of 0</span>
-                  <button type="button" id="itso-cases-next" class="btn-secondary btn-small">Next</button>
+            <div class="diagram-container">
+                <div class="diagram-main">
+                    <div class="level-labels" id="level-labels"></div>
+                    <div class="svg-container">
+                        <svg id="dept-diagram-svg"></svg>
+                    </div>
                 </div>
-                <p class="hint thirty-cases-focus-hint">Click a case to see its ITSO target route; click a person to inspect their current upward chain.</p>
-                <ul id="itso-cases-cases"></ul>
-              </div>
-              <div class="thirty-cases-legend itso-cases-legend" aria-label="ITSO legend">
-                <h4>Legend</h4>
-                <ul>
-                  <li>
-                    <span class="legend-line legend-line-solid"></span>
-                    <span><strong>Solid line</strong> - Primary administrative manager - Normal reporting, payroll, leave, performance default</span>
-                  </li>
-                  <li>
-                    <span class="legend-line legend-line-dotted"></span>
-                    <span><strong>Dotted line</strong> - Functional / project manager - Matrix reporting, tech lead, global head</span>
-                  </li>
-                  <li>
-                    <span class="legend-line legend-line-dashed"></span>
-                    <span><strong>Dashed line</strong> - Temporary acting / coverage relationship - Acting head, maternity coverage, handover</span>
-                  </li>
-                  <li>
-                    <span class="legend-line legend-line-delegation"></span>
-                    <span><strong>Thin grey line</strong> - Delegation only - Executive assistant approval delegation</span>
-                  </li>
-                  <li>
-                    <span class="legend-badge-invalid">!</span>
-                    <span><strong>Red warning badge</strong> - Invalid / blocked relationship - Terminated approver, circular reporting, inactive approver</span>
-                  </li>
-                </ul>
-              </div>
-            </aside>
-            <div class="thirty-cases-diagram">
-              <div class="diagram-container">
-                <svg id="itso-cases-svg" width="100%" height="540"></svg>
-              </div>
-              <div id="itso-cases-detail" class="testcase-result">
-                <h3 id="itso-cases-title">Select an ITSO case</h3>
-                <div id="itso-cases-scenario" class="testcase-wording">
-                  Pick a case on the left to bold its ITSO-only target reporting line.
+                <div class="diagram-sidebar" id="diagram-sidebar" style="display: none;">
+                    <div class="sidebar-header">
+                        <h3 id="sidebar-title">User Details</h3>
+                        <button class="btn-close" onclick="closeDiagramSidebar()">×</button>
+                    </div>
+                    <div class="sidebar-tabs">
+                        <button class="sidebar-tab active" data-tab="profile">Profile</button>
+                        <button class="sidebar-tab" data-tab="reporting">Reporting Line</button>
+                        <button class="sidebar-tab" data-tab="route">Action Route</button>
+                        <button class="sidebar-tab" data-tab="overlays">Overlays</button>
+                        <button class="sidebar-tab" data-tab="history">History</button>
+                    </div>
+                    <div class="sidebar-content">
+                        <div class="sidebar-tab-content active" id="tab-profile"></div>
+                        <div class="sidebar-tab-content" id="tab-reporting"></div>
+                        <div class="sidebar-tab-content" id="tab-route"></div>
+                        <div class="sidebar-tab-content" id="tab-overlays"></div>
+                        <div class="sidebar-tab-content" id="tab-history"></div>
+                    </div>
+                    <div class="sidebar-actions">
+                        <button class="btn btn-primary" id="sidebar-save-btn" onclick="saveSidebarChanges()">Save</button>
+                        <button class="btn btn-secondary" onclick="closeDiagramSidebar()">Cancel</button>
+                    </div>
                 </div>
-                <div id="itso-cases-partial-controls" class="thirty-cases-peer-controls hidden">
-                  <label>
-                    <span id="itso-cases-partial-manager-label">On leave</span>
-                    <select id="itso-cases-partial-manager"></select>
-                  </label>
-                  <label>
-                    <span id="itso-cases-partial-leave-label">Leave duty cover</span>
-                    <select id="itso-cases-partial-leave-cover"></select>
-                  </label>
-                  <label>
-                    <span id="itso-cases-partial-review-label">Review duty cover</span>
-                    <select id="itso-cases-partial-review-cover"></select>
-                  </label>
-                  <label>
-                    View
-                    <select id="itso-cases-partial-mode">
-                      <option value="leave">Leave duty</option>
-                      <option value="review">Review duty</option>
-                    </select>
-                  </label>
-                  <p class="hint thirty-cases-focus-hint">Eligible people for this case: ITSO L4, L5, L6, and L7 only.</p>
+            </div>
+        </div>
+
+        <!-- Page 5: Overlay Management -->
+        <div id="page-overlay-management" class="page">
+            <div class="page-header">
+                <h1>Overlay Management</h1>
+                <button class="btn btn-primary" onclick="showAddOverlayModal()">Add Overlay</button>
+            </div>
+            <div class="overlay-filters">
+                <select id="overlay-type-filter" onchange="loadOverlays()">
+                    <option value="">All Types</option>
+                    <option value="acting">Acting</option>
+                    <option value="coverage">Coverage</option>
+                    <option value="delegation">Delegation</option>
+                    <option value="handover">Handover</option>
+                </select>
+                <select id="overlay-status-filter" onchange="loadOverlays()">
+                    <option value="">All Status</option>
+                    <option value="active">Active</option>
+                    <option value="expired">Expired</option>
+                    <option value="upcoming">Upcoming</option>
+                </select>
+            </div>
+            <div class="card">
+                <table class="data-table" id="overlays-table">
+                    <thead>
+                        <tr>
+                            <th>Type</th>
+                            <th>From User</th>
+                            <th>To User</th>
+                            <th>Department</th>
+                            <th>Effective From</th>
+                            <th>Effective To</th>
+                            <th>Status</th>
+                            <th>Policy</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Page 6: Audit Log -->
+        <div id="page-audit-log" class="page">
+            <div class="page-header">
+                <h1>Audit Log</h1>
+            </div>
+            <div class="audit-filters">
+                <select id="audit-entity-filter" onchange="loadAuditLogs()">
+                    <option value="">All Entity Types</option>
+                    <option value="user">User</option>
+                    <option value="reporting_line">Reporting Line</option>
+                    <option value="overlay">Overlay</option>
+                    <option value="action">Action</option>
+                    <option value="template">Template</option>
+                    <option value="department">Department</option>
+                </select>
+                <input type="number" id="audit-limit" value="50" min="10" max="500" onchange="loadAuditLogs()">
+                <label for="audit-limit">records</label>
+            </div>
+            <div class="card">
+                <table class="data-table" id="audit-table">
+                    <thead>
+                        <tr>
+                            <th>Timestamp</th>
+                            <th>Actor</th>
+                            <th>Action</th>
+                            <th>Entity Type</th>
+                            <th>Entity Name/ID</th>
+                            <th>Result</th>
+                            <th>Source Page</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Page 7: Validation -->
+        <div id="page-validation" class="page">
+            <div class="page-header">
+                <h1>Validation Issues</h1>
+                <button class="btn btn-primary" onclick="loadValidationIssues()">Refresh</button>
+            </div>
+            <div id="validation-content"></div>
+        </div>
+
+        <!-- Page 8: ITSO 30 Cases -->
+        <div id="page-itso-cases" class="page">
+            <div class="itso-cases-layout">
+                <!-- Left sidebar -->
+                <div class="itso-cases-sidebar">
+                    <div class="itso-sidebar-filter">
+                        <label class="form-label">Category</label>
+                        <select id="itso-category-filter" class="form-control" onchange="filterItsoCases()">
+                            <option value="">All categories</option>
+                        </select>
+                    </div>
+                    <div class="itso-cases-nav">
+                        <button class="btn btn-secondary btn-sm" onclick="prevItsoCase()">Previous</button>
+                        <span id="itso-case-counter" class="itso-nav-counter">—</span>
+                        <button class="btn btn-secondary btn-sm" onclick="nextItsoCase()">Next</button>
+                    </div>
+                    <p class="itso-sidebar-hint">Click a case to see its target route; click a person in the diagram to inspect their upward chain.</p>
+                    <div class="case-list" id="case-list"></div>
+                    <div class="itso-legend">
+                        <h4>Legend</h4>
+                        <div class="itso-legend-item">
+                            <span class="itso-legend-line itso-legend-solid"></span>
+                            <span><strong>Solid line</strong> – Primary administrative manager<br><small>Normal reporting, payroll, leave, performance default</small></span>
+                        </div>
+                        <div class="itso-legend-item">
+                            <span class="itso-legend-line itso-legend-dotted"></span>
+                            <span><strong>Dotted line</strong> – Functional / project manager<br><small>Matrix reporting, tech lead, global head</small></span>
+                        </div>
+                        <div class="itso-legend-item">
+                            <span class="itso-legend-line itso-legend-dashed"></span>
+                            <span><strong>Dashed line</strong> – Temporary acting / coverage relationship<br><small>Acting head, maternity coverage, handover</small></span>
+                        </div>
+                        <div class="itso-legend-item">
+                            <span class="itso-legend-line itso-legend-thin"></span>
+                            <span><strong>Thin grey line</strong> – Delegation only<br><small>Executive assistant approval delegation</small></span>
+                        </div>
+                        <div class="itso-legend-item">
+                            <span class="itso-legend-badge">!</span>
+                            <span><strong>Red warning badge</strong> – Invalid / blocked relationship<br><small>Terminated approver, circular reporting, inactive approver</small></span>
+                        </div>
+                    </div>
                 </div>
-                <div id="itso-cases-method" class="hint itso-route-summary"></div>
-              </div>
-            </div>
-          </div>
-        </section>
-      </div>
-
-      <!-- ===== SEED DATA EDITOR TAB ===== -->
-      <div id="tab-seed-editor" class="tab-content hidden">
-        <section class="card">
-          <div class="section-header">
-            <h2>Seed Data Editor</h2>
-            <button type="button" id="reset-seed-btn" class="btn-danger">Reset to default seed data</button>
-          </div>
-          <p class="hint">
-            Edit users, levels, routing rules, fallback approvers, and reporting lines.
-            Changes persist across simulations until you reset.
-          </p>
-
-          <!-- Seed editor sub-tabs -->
-          <div class="seed-tabs">
-            <button class="seed-tab-btn active" data-seed="users">Users</button>
-            <button class="seed-tab-btn" data-seed="dept_levels">Levels</button>
-            <button class="seed-tab-btn" data-seed="reporting_lines">Reporting Lines</button>
-            <button class="seed-tab-btn" data-seed="routing_rules">Routing Rules</button>
-            <button class="seed-tab-btn" data-seed="fallback_rules">Fallback Approvers</button>
-            <button class="seed-tab-btn" data-seed="actions">Actions</button>
-            <button class="seed-tab-btn" data-seed="departments">Departments</button>
-            <button class="seed-tab-btn" data-seed="org_units">Org Units</button>
-          </div>
-
-          <!-- User seed table -->
-          <div id="seed-tab-users" class="seed-tab-content">
-            <div class="table-toolbar">
-              <h3>Users</h3>
-              <button type="button" id="add-user-btn">+ Add User</button>
-            </div>
-            <div id="add-user-form" class="inline-form hidden">
-              <h4>New User</h4>
-              <div class="form-row">
-                <label>Name <input type="text" id="new-user-name" /></label>
-                <label>Email <input type="email" id="new-user-email" /></label>
-                <label>Level
-                  <select id="new-user-level"></select>
-                </label>
-                <button type="button" id="save-new-user-btn">Create</button>
-                <button type="button" id="cancel-new-user-btn" class="btn-secondary">Cancel</button>
-              </div>
-              <div id="new-user-error" class="error-box hidden"></div>
-            </div>
-            <div class="table-wrap">
-              <table id="users-table">
-                <thead>
-                  <tr>
-                    <th>ID</th><th>Name</th><th>Email</th><th>Department</th>
-                    <th>Level</th><th>Rank</th><th>Active</th><th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="users-tbody"></tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- Dept levels table -->
-          <div id="seed-tab-dept_levels" class="seed-tab-content hidden">
-            <div class="table-toolbar">
-              <h3>Department Levels</h3>
-              <button type="button" id="add-level-btn">+ Add Level</button>
-            </div>
-            <div id="add-level-form" class="inline-form hidden">
-              <h4>New Level</h4>
-              <div class="form-row">
-                <label>Department <select id="new-level-dept"></select></label>
-                <label>Rank <input type="number" id="new-level-rank" style="width:5rem" /></label>
-                <label>Level Name <input type="text" id="new-level-name" /></label>
-                <label class="checkbox-label"><input type="checkbox" id="new-level-top" /> Top Level</label>
-                <button type="button" id="save-new-level-btn">Create</button>
-                <button type="button" id="cancel-new-level-btn" class="btn-secondary">Cancel</button>
-              </div>
-              <div id="new-level-error" class="error-box hidden"></div>
-            </div>
-            <div class="table-wrap">
-              <table id="levels-table">
-                <thead>
-                  <tr>
-                    <th>ID</th><th>Department</th><th>Rank</th><th>Level Name</th><th>Top Level</th><th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="levels-tbody"></tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- Reporting lines table -->
-          <div id="seed-tab-reporting_lines" class="seed-tab-content hidden">
-            <div class="table-toolbar">
-              <h3>Reporting Lines (Active Primary)</h3>
-              <button type="button" id="add-rl-btn">+ Add / Change Manager</button>
-            </div>
-            <div id="add-rl-form" class="inline-form hidden">
-              <h4>Set Primary Manager</h4>
-              <div class="form-row">
-                <label>Staff Member
-                  <select id="new-rl-user"></select>
-                </label>
-                <label>New Manager
-                  <select id="new-rl-manager"></select>
-                </label>
-                <button type="button" id="save-new-rl-btn">Set Manager</button>
-                <button type="button" id="cancel-new-rl-btn" class="btn-secondary">Cancel</button>
-              </div>
-              <div id="new-rl-error" class="error-box hidden"></div>
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>ID</th><th>Staff Member</th><th>Manager</th><th>Department</th><th>Primary</th><th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="rl-tbody"></tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- Routing rules table -->
-          <div id="seed-tab-routing_rules" class="seed-tab-content hidden">
-            <h3>Action Routing Rules</h3>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>ID</th><th>Action</th><th>Department</th>
-                    <th>Requires Primary</th><th>Requires 2nd Level</th><th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="routing-rules-tbody"></tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- Fallback rules table -->
-          <div id="seed-tab-fallback_rules" class="seed-tab-content hidden">
-            <h3>Department Fallback Approvers</h3>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>ID</th><th>Department</th><th>Fallback Approver</th><th>Label</th><th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="fallback-tbody"></tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- Actions table -->
-          <div id="seed-tab-actions" class="seed-tab-content hidden">
-            <div class="table-toolbar">
-              <h3>Actions</h3>
-              <button type="button" id="add-action-btn">+ Add Action</button>
-            </div>
-            <div id="add-action-form" class="inline-form hidden">
-              <h4>New Action</h4>
-              <div class="form-row">
-                <label>Name <input type="text" id="new-action-name" /></label>
-                <label>Code <input type="text" id="new-action-code" /></label>
-                <label class="checkbox-label"><input type="checkbox" id="new-action-project" /> Project Scoped</label>
-                <button type="button" id="save-new-action-btn">Create</button>
-                <button type="button" id="cancel-new-action-btn" class="btn-secondary">Cancel</button>
-              </div>
-              <div id="new-action-error" class="error-box hidden"></div>
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr><th>ID</th><th>Name</th><th>Code</th><th>Project Scoped</th><th>Actions</th></tr>
-                </thead>
-                <tbody id="actions-tbody"></tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- Departments table -->
-          <div id="seed-tab-departments" class="seed-tab-content hidden">
-            <div class="table-toolbar">
-              <h3>Departments</h3>
-              <button type="button" id="add-dept-btn">+ Add Department</button>
-            </div>
-            <div id="add-dept-form" class="inline-form hidden">
-              <h4>New Department</h4>
-              <div class="form-row">
-                <label>Name <input type="text" id="new-dept-name" /></label>
-                <label>Code <input type="text" id="new-dept-code" /></label>
-                <button type="button" id="save-new-dept-btn">Create</button>
-                <button type="button" id="cancel-new-dept-btn" class="btn-secondary">Cancel</button>
-              </div>
-              <div id="new-dept-error" class="error-box hidden"></div>
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr><th>ID</th><th>Name</th><th>Code</th><th>Actions</th></tr>
-                </thead>
-                <tbody id="departments-tbody"></tbody>
-              </table>
-            </div>
-          </div>
-
-          <!-- Org units table -->
-          <div id="seed-tab-org_units" class="seed-tab-content hidden">
-            <div class="table-toolbar">
-              <h3>Org Units / Teams</h3>
-              <button type="button" id="add-ou-btn">+ Add Org Unit</button>
-            </div>
-            <div id="add-ou-form" class="inline-form hidden">
-              <h4>New Org Unit</h4>
-              <div class="form-row">
-                <label>Department <select id="new-ou-dept"></select></label>
-                <label>Name <input type="text" id="new-ou-name" /></label>
-                <label>Code <input type="text" id="new-ou-code" /></label>
-                <button type="button" id="save-new-ou-btn">Create</button>
-                <button type="button" id="cancel-new-ou-btn" class="btn-secondary">Cancel</button>
-              </div>
-              <div id="new-ou-error" class="error-box hidden"></div>
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr><th>ID</th><th>Department</th><th>Name</th><th>Code</th><th>Actions</th></tr>
-                </thead>
-                <tbody id="org-units-tbody"></tbody>
-              </table>
-            </div>
-          </div>
-
-        </section>
-      </div>
-
-      <!-- ===== SIMULATION TAB ===== -->
-      <div id="tab-simulation" class="tab-content hidden">
-        <section class="card two-column">
-          <div>
-            <h2>Submit Action Simulation</h2>
-            <form id="routing-form" class="stack">
-              <label>
-                Requester
-                <select id="requester-select"></select>
-              </label>
-              <label>
-                Action
-                <select id="action-select"></select>
-              </label>
-              <label>
-                Request date (optional)
-                <input id="request-at-input" type="datetime-local" />
-              </label>
-              <label>
-                Project code (optional)
-                <input id="project-code-input" type="text" placeholder="UTP" />
-              </label>
-              <button type="submit">Generate approval chain</button>
-            </form>
-            <pre id="routing-output">Choose a requester and action.</pre>
-          </div>
-
-          <div>
-            <h2>Team-Lead Permission Simulation</h2>
-            <form id="permission-form" class="stack">
-              <label>
-                Editor
-                <select id="editor-select"></select>
-              </label>
-              <label>
-                Target user
-                <select id="target-select"></select>
-              </label>
-              <button type="submit">Check permission</button>
-            </form>
-            <pre id="permission-output">Choose an editor and target user.</pre>
-          </div>
-        </section>
-
-        <section class="card">
-          <h2>Advanced Scenario Simulations</h2>
-          <p>
-            Run first-class simulations for acting, peer coverage, delegation,
-            handover overlap, cross-department projects, co-heads, and
-            self-approval prevention.
-            Scenarios use the current edited state — changes made in the Diagram Editor
-            or Seed Data Editor are reflected here immediately.
-          </p>
-          <div id="scenario-list" class="scenario-grid"></div>
-          <pre id="scenario-output">Choose a scenario.</pre>
-        </section>
-      </div>
-
-      <!-- ===== SCENARIO LAB TAB ===== -->
-      <div id="tab-scenario-lab" class="tab-content hidden">
-        <section class="card">
-          <h2>Scenario Lab — Advanced Test-Case Simulator</h2>
-          <p class="hint">
-            Build an advanced reporting-line scenario (delegation, acting, peer coverage,
-            handover) on top of the official line and see who becomes the
-            <strong>primary</strong> and <strong>second-level</strong> approver.
-            Overlays here are simulated only — they are <strong>not</strong> saved to the
-            POC state, so you can freely test cases.
-          </p>
-          <div class="two-column">
-            <div>
-              <h3>Request</h3>
-              <form id="scenario-lab-form" class="stack">
-                <label>Requester
-                  <select id="lab-requester"></select>
-                </label>
-                <label>Action
-                  <select id="lab-action"></select>
-                </label>
-                <label>Request date (optional)
-                  <input id="lab-request-at" type="datetime-local" />
-                </label>
-                <label>Project code (optional)
-                  <input id="lab-project-code" type="text" placeholder="UTP" />
-                </label>
-
-                <div class="section-header">
-                  <h3>Overlays</h3>
-                  <button type="button" id="lab-add-overlay-btn">+ Add overlay</button>
+                <!-- Right main area -->
+                <div class="itso-cases-main">
+                    <p class="itso-cases-note">This tab mirrors Cases 1-33 as ITSO-only scenarios. Department structure is adjusted per case to better reflect the scenario intent while staying in ITSO. Nothing here is saved.</p>
+                    <div class="diagram-main itso-diagram-main">
+                        <div class="level-labels" id="itso-level-labels"></div>
+                        <div class="svg-container">
+                            <svg id="itso-case-svg"></svg>
+                        </div>
+                    </div>
+                    <div id="case-details" class="itso-case-details">
+                        <p class="text-muted">Select a test case to view details.</p>
+                    </div>
                 </div>
-                <div id="lab-overlays"></div>
-
-                <button type="submit">Run scenario</button>
-              </form>
             </div>
-            <div>
-              <h3>Resolved Approvers</h3>
-              <div id="lab-result-summary" class="lab-summary">Run a scenario to see results.</div>
-              <pre id="lab-output">No scenario run yet.</pre>
-            </div>
-          </div>
-        </section>
-      </div>
+        </div>
 
-      <!-- ===== BUSINESS CASES TAB ===== -->
-      <div id="tab-cases" class="tab-content hidden">
-        <section class="card">
-          <h2>Business Cases Covered</h2>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Scenario</th>
-                  <th>Input</th>
-                  <th>Preconditions</th>
-                  <th>Expected Output</th>
-                  <th>Pass Criteria</th>
-                </tr>
-              </thead>
-              <tbody id="business-case-body"></tbody>
-            </table>
-          </div>
-        </section>
-      </div>
+        <!-- Page 9: Test Case Diagram -->
+        <div id="page-test-diagram" class="page">
+            <div class="page-header">
+                <h1>Test Case Diagram</h1>
+            </div>
+            <div class="card">
+                <form id="test-diagram-form" class="form-grid">
+                    <div class="form-group">
+                        <label>Requester</label>
+                        <select id="test-requester"></select>
+                    </div>
+                    <div class="form-group">
+                        <label>Action</label>
+                        <select id="test-action">
+                            <option value="">None (just reporting line)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Date (optional)</label>
+                        <input type="date" id="test-date">
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="test-enable-overlays">
+                            Enable Overlays
+                        </label>
+                    </div>
+                </form>
+                <div id="overlay-form-section" style="display: none;">
+                    <h3>Overlays</h3>
+                    <div id="test-overlays-container"></div>
+                    <button class="btn btn-secondary" onclick="addTestOverlay()">+ Add Overlay</button>
+                </div>
+                <button class="btn btn-primary" onclick="runTestDiagram()">Run</button>
+            </div>
+            <div class="card" id="test-diagram-results" style="display: none;">
+                <h3>Results</h3>
+                <div id="test-diagram-output"></div>
+            </div>
+        </div>
+
+        <!-- Page 10: Scenario Builder -->
+        <div id="page-scenario-builder" class="page">
+            <div class="page-header">
+                <h1>Scenario Builder</h1>
+            </div>
+            <div class="card">
+                <form id="scenario-form" class="form-grid">
+                    <div class="form-group">
+                        <label>Scenario Name</label>
+                        <input type="text" id="scenario-name" placeholder="My test scenario">
+                    </div>
+                    <div class="form-group">
+                        <label>Requester</label>
+                        <select id="scenario-requester"></select>
+                    </div>
+                    <div class="form-group">
+                        <label>Action Type</label>
+                        <select id="scenario-action"></select>
+                    </div>
+                    <div class="form-group">
+                        <label>Request Date (optional)</label>
+                        <input type="date" id="scenario-date">
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="scenario-overlay-enable">
+                            Enable Overlays
+                        </label>
+                    </div>
+                </form>
+                <button class="btn btn-primary" onclick="runScenario()">Run Simulation</button>
+            </div>
+            <div class="card" id="scenario-results" style="display: none;">
+                <h3>Results</h3>
+                <div id="scenario-output"></div>
+            </div>
+        </div>
+
+        <!-- Page 11: Seed Data Editor -->
+        <div id="page-seed-data" class="page">
+            <div class="page-header">
+                <h1>Seed Data Editor</h1>
+                <div class="page-actions">
+                    <button class="btn btn-secondary" onclick="exportSeedData()">Export JSON</button>
+                    <button class="btn btn-danger" onclick="resetToDefault()">Reset to Default</button>
+                </div>
+            </div>
+            <div class="seed-tabs">
+                <button class="seed-tab active" data-tab="departments">Departments</button>
+                <button class="seed-tab" data-tab="levels">Levels</button>
+                <button class="seed-tab" data-tab="org-units">Org Units</button>
+                <button class="seed-tab" data-tab="users">Users</button>
+                <button class="seed-tab" data-tab="reporting-lines">Reporting Lines</button>
+                <button class="seed-tab" data-tab="actions">Actions</button>
+                <button class="seed-tab" data-tab="routing-rules">Routing Rules</button>
+                <button class="seed-tab" data-tab="fallback-rules">Fallback Rules</button>
+            </div>
+            <div class="card">
+                <div class="seed-tab-content active" id="seed-departments"></div>
+                <div class="seed-tab-content" id="seed-levels"></div>
+                <div class="seed-tab-content" id="seed-org-units"></div>
+                <div class="seed-tab-content" id="seed-users"></div>
+                <div class="seed-tab-content" id="seed-reporting-lines"></div>
+                <div class="seed-tab-content" id="seed-actions"></div>
+                <div class="seed-tab-content" id="seed-routing-rules"></div>
+                <div class="seed-tab-content" id="seed-fallback-rules"></div>
+            </div>
+        </div>
 
     </main>
 
-    <script src="/app.js"></script>
-  </body>
+    <!-- Modal Templates -->
+    
+    <!-- Add Action Modal -->
+    <div id="action-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="action-modal-title">Add Action</h2>
+                <button class="btn-close" onclick="closeModal('action-modal')">×</button>
+            </div>
+            <div class="modal-body">
+                <form id="action-form">
+                    <input type="hidden" id="action-id">
+                    <div class="form-group">
+                        <label>Name</label>
+                        <input type="text" id="action-name" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Code</label>
+                        <input type="text" id="action-code" required>
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="action-project-scoped">
+                            Project Scoped
+                        </label>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('action-modal')">Cancel</button>
+                <button class="btn btn-primary" onclick="saveAction()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Template Modal -->
+    <div id="template-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="template-modal-title">Add Template</h2>
+                <button class="btn-close" onclick="closeModal('template-modal')">×</button>
+            </div>
+            <div class="modal-body">
+                <form id="template-form">
+                    <input type="hidden" id="template-id">
+                    <div class="form-group">
+                        <label>Name</label>
+                        <input type="text" id="template-name" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Code</label>
+                        <input type="text" id="template-code" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Description</label>
+                        <textarea id="template-description"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Number of Levels</label>
+                        <input type="number" id="template-levels" min="1" max="5" value="2">
+                    </div>
+                    <div class="form-group">
+                        <label>Routing Type</label>
+                        <select id="template-routing-type">
+                            <option value="sequential">Sequential</option>
+                            <option value="parallel">Parallel</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="template-allow-overlay" checked>
+                            Allow Overlay
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label>Self Approval Handling</label>
+                        <select id="template-self-approval">
+                            <option value="skip">Skip</option>
+                            <option value="require">Require</option>
+                            <option value="escalate">Escalate</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="template-active" checked>
+                            Active
+                        </label>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('template-modal')">Cancel</button>
+                <button class="btn btn-primary" onclick="saveTemplate()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add User Modal -->
+    <div id="user-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Add User</h2>
+                <button class="btn-close" onclick="closeModal('user-modal')">×</button>
+            </div>
+            <div class="modal-body">
+                <form id="user-form">
+                    <div class="form-group">
+                        <label>Name</label>
+                        <input type="text" id="user-name" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Email</label>
+                        <input type="email" id="user-email" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Level</label>
+                        <select id="user-level" required></select>
+                    </div>
+                    <div class="form-group">
+                        <label>Department</label>
+                        <select id="user-dept" required></select>
+                    </div>
+                    <div class="form-group">
+                        <label>Org Unit</label>
+                        <select id="user-org-unit"></select>
+                    </div>
+                    <div class="form-group">
+                        <label>Manager</label>
+                        <select id="user-manager"></select>
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="user-active" checked>
+                            Active
+                        </label>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('user-modal')">Cancel</button>
+                <button class="btn btn-primary" onclick="saveUser()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Overlay Modal -->
+    <div id="overlay-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Add Overlay</h2>
+                <button class="btn-close" onclick="closeModal('overlay-modal')">×</button>
+            </div>
+            <div class="modal-body">
+                <form id="overlay-form">
+                    <div class="form-group">
+                        <label>Overlay Type</label>
+                        <select id="overlay-type" required>
+                            <option value="acting">Acting</option>
+                            <option value="coverage">Coverage</option>
+                            <option value="delegation">Delegation</option>
+                            <option value="handover">Handover</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>From User</label>
+                        <select id="overlay-from-user" required></select>
+                    </div>
+                    <div class="form-group">
+                        <label>To User</label>
+                        <select id="overlay-to-user" required></select>
+                    </div>
+                    <div class="form-group">
+                        <label>Department</label>
+                        <select id="overlay-dept" required></select>
+                    </div>
+                    <div class="form-group">
+                        <label>Effective From</label>
+                        <input type="date" id="overlay-from" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Effective To</label>
+                        <input type="date" id="overlay-to" required>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('overlay-modal')">Cancel</button>
+                <button class="btn btn-primary" onclick="saveOverlay()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
 </html>
